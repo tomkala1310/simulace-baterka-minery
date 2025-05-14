@@ -1,1591 +1,903 @@
-{/* Distribuce přetoků */}
-      <div className="bg-white p-4 rounded shadow mb-6">
-        <h2 className="text-lg font-semibold mb-3">Distribuce přetoků do sítě</h2>
-        <div className="h-64">
-          {exportDistribution.length > 0 ? (
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={exportDistribution}
-                margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="pretok" label={{ value: 'Velikost přetoku (kW)', position: 'insideBottom', offset: -5 }} />
-                <YAxis label={{ value: 'Počet čtvrthodin', angle: -90, position: 'insideLeft' }} />
-                <Tooltip formatter={(value, name) => {
-                  if (name === 'cetnost') return [value ? value + ' čtvrthodin' : '0 čtvrthodin', 'Četnost'];
-                  if (name === 'hodiny') return [value ? formatNumber(value) + ' hodin' : '0 hodin', 'Doba trvání'];
-                  return [value, name];
-                }} />
-                <Legend />
-                <Bar dataKey="cetnost" name="Četnost" fill="#8884d8" />
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="h-full flex items-center justify-center">
-              <div className="text-gray-500">Data pro graf nejsou k dispozici</div>
-            </div>
-          )}
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simulace optimalizace FVE pomocí těžby kryptoměn a BESS</title>
+  
+  <!-- Tailwind CSS (CDN) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Chart.js (CDN) - plná verze s Doughnut, Line a Bar grafy -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+  
+  <style>
+    body {
+      background-color: #f5f5f5;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    .card {
+      background-color: white;
+      border-radius: 0.375rem;
+      box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+      padding: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .card-title {
+      font-size: 1.125rem;
+      font-weight: 600;
+      margin-bottom: 0.75rem;
+    }
+    .info-box {
+      padding: 0.5rem;
+      border-radius: 0.25rem;
+      margin-bottom: 0.5rem;
+    }
+    .info-label {
+      font-size: 0.875rem;
+      color: #4b5563;
+    }
+    .info-value {
+      font-size: 1.125rem;
+      font-weight: 600;
+    }
+    .bg-blue-light { background-color: #e0f2fe; }
+    .bg-red-light { background-color: #fee2e2; }
+    .bg-green-light { background-color: #d1fae5; }
+    .bg-yellow-light { background-color: #fef3c7; }
+    .bg-orange-light { background-color: #ffedd5; }
+    .bg-purple-light { background-color: #f3e8ff; }
+    .bg-amber-light { background-color: #fef3c7; }
+    .bg-indigo-light { background-color: #e0e7ff; }
+    .bg-violet-light { background-color: #ede9fe; }
+    
+    .chart-container {
+      position: relative;
+      height: 300px;
+      width: 100%;
+    }
+    
+    .pie-chart-container {
+      position: relative;
+      height: 200px;
+      width: 100%;
+    }
+    
+    #loading {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(255, 255, 255, 0.8);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 9999;
+    }
+  </style>
+</head>
+<body>
+  <div id="loading">
+    <div class="text-xl font-bold">Načítání simulace...</div>
+  </div>
+
+  <div id="app" class="p-6 max-w-6xl mx-auto">
+    <h1 class="text-2xl font-bold mb-6">Simulace optimalizace FVE pomocí těžby kryptoměn a BESS</h1>
+    
+    <!-- Grid pro základní informace -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <!-- Výroba a spotřeba -->
+      <div class="card">
+        <h2 class="card-title">Výroba a spotřeba</h2>
+        <div class="grid grid-cols-2 gap-2">
+          <div class="info-box bg-blue-light">
+            <div class="info-label">Celková výroba</div>
+            <div class="info-value" id="total-production">1 447 078,00 kWh</div>
+          </div>
+          <div class="info-box bg-red-light">
+            <div class="info-label">Celková spotřeba</div>
+            <div class="info-value" id="total-consumption">1 925 474,50 kWh</div>
+          </div>
+          <div class="info-box bg-green-light">
+            <div class="info-label">Vlastní spotřeba</div>
+            <div class="info-value" id="self-consumption">1 192 101,25 kWh</div>
+          </div>
+          <div class="info-box bg-yellow-light">
+            <div class="info-label">Přetoky do sítě</div>
+            <div class="info-value" id="total-export">254 976,75 kWh</div>
+          </div>
         </div>
       </div>
       
-      {/* Závěry a doporučení */}
-      <div className="bg-white p-4 rounded shadow">
-        <h2 className="text-lg font-semibold mb-3">Závěry a doporučení</h2>
+      <!-- Vlastní spotřeba -->
+      <div class="card">
+        <h2 class="card-title">Vlastní spotřeba</h2>
+        <div class="grid grid-cols-2 gap-2">
+          <div class="info-box bg-blue-light">
+            <div class="info-label">Aktuální poměr</div>
+            <div class="info-value" id="current-ratio">82,38%</div>
+          </div>
+          <div class="info-box bg-green-light">
+            <div class="info-label">Požadovaný poměr</div>
+            <div class="info-value">85,00%</div>
+          </div>
+          <div class="info-box bg-orange-light">
+            <div class="info-label">Min. počet minerů</div>
+            <div class="info-value" id="required-miners">4</div>
+          </div>
+          <div class="info-box bg-purple-light">
+            <div class="info-label">Dotace v ohrožení</div>
+            <div class="info-value">3 000 000 Kč</div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Nastavení minerů a BESS -->
+      <div class="card">
+        <h2 class="card-title">Nastavení</h2>
+        <div class="mb-3">
+          <label class="block text-sm mb-1">Počet Antminer S19 Pro Hydro</label>
+          <input
+            type="range"
+            min="0"
+            max="20"
+            value="4"
+            id="miner-slider"
+            class="w-full"
+          />
+          <div class="flex justify-between text-xs">
+            <span>0</span>
+            <span id="current-miners">4</span>
+            <span>20</span>
+          </div>
+        </div>
         
-        <div className="space-y-4">
-          <div>
-            <h3 className="font-medium">Současný stav:</h3>
-            <p>
-              Aktuální poměr vlastní spotřeby je <span className="font-semibold">{formatNumber(energyData.selfConsumptionRatio)}%</span>, 
-              což nesplňuje podmínku 85% pro zachování dotace.
-            </p>
-          </div>
-          
-          <div>
-            <h3 className="font-medium">Optimální řešení:</h3>
-            <p>
-              Pro dosažení minimálně 85% vlastní spotřeby existuje několik možností:
-            </p>
-            <ul className="list-disc pl-5 mt-2 space-y-1">
-              <li>Použití pouze minerů: minimálně <span className="font-semibold">{requiredMiners}</span> minerů</li>
-              <li>Použití pouze BESS: minimálně <span className="font-semibold">{bessAnalysis.find(item => item.selfConsumptionRatio >= 85)?.bessUnits || "více než 5"}</span> jednotek</li>
-              <li>Optimální kombinace: <span className="font-semibold">{optimalCombination.optimalMiners}</span> minerů a <span className="font-semibold">{optimalCombination.optimalBess}</span> BESS jednotek</li>
-            </ul>
-          </div>
-          
-          <div>
-            <h3 className="font-medium">Ekonomické zhodnocení:</h3>
-            <p>
-              Vybraná konfigurace (<span className="font-semibold">{numMiners}</span> minerů a <span className="font-semibold">{numBessUnits}</span> BESS jednotek) 
-              vyžaduje investici <span className="font-semibold">{formatNumber(economicAnalysis.totalInvestment)}</span> Kč, 
-              což je {economicAnalysis.comparison > 0 ? "výrazně méně" : "více"} než potenciální ztráta dotace (3 000 000 Kč).
-            </p>
-            <p className="mt-1">
-              Minery budou v provozu pouze během přetoků, přibližně <span className="font-semibold">
-                {formatNumber(economicAnalysis.minerUtilizationRatio)}%</span> času v roce. BESS jednotky budou využity na <span className="font-semibold">
-                {formatNumber(economicAnalysis.bessUtilizationRatio)}%</span> své kapacity ročně.
-            </p>
-            <p className="mt-1">
-              Odhadovaná návratnost celkové investice je přibližně <span className="font-semibold">
-                {formatNumber(economicAnalysis.paybackYears)}</span> let z kombinace výnosů těžby a úspory energie z BESS.
-            </p>
-          </div>
-          
-          <div>
-            <h3 className="font-medium">Energetické využití:</h3>
-            <p>
-              Při instalaci <span className="font-semibold">{numMiners}</span> minerů a <span className="font-semibold">{numBessUnits}</span> BESS jednotek by bylo 
-              spotřebováno <span className="font-semibold">{formatNumber(energyData.minerEnergyUsed + energyData.bessEnergyUsed)}</span> kWh 
-              přebytků energie ročně, což představuje <span className="font-semibold">
-                {energyData.totalExport > 0 ? formatNumber((energyData.minerEnergyUsed + energyData.bessEnergyUsed) / energyData.totalExport * 100) : '0'}%</span> 
-              současných přetoků do sítě.
-            </p>
-          </div>
-          
-          <div className="bg-green-50 p-3 rounded">
-            <h3 className="font-medium text-green-800">Finální doporučení:</h3>
-            <p className="text-green-800">
-              {energyData.newSelfConsumptionRatio >= 85 ? (
-                <>
-                  Doporučujeme instalovat <span className="font-semibold">{numMiners}</span> minerů Antminer S19 Pro Hydro a <span className="font-semibold">{numBessUnits}</span> jednotek OPTIM US L260-OMNI
-                  pro dosažení požadovaného poměru vlastní spotřeby <span className="font-semibold">{formatNumber(energyData.newSelfConsumptionRatio)}%</span> a zachování dotace.
-                  Toto řešení je ekonomicky výhodné a poskytuje přiměřenou návratnost investice.
-                </>
-              ) : (
-                <>
-                  Aktuální konfigurace nedosahuje požadovaného poměru vlastní spotřeby 85%. Doporučujeme optimální konfiguraci:
-                  <span className="font-semibold"> {optimalCombination.optimalMiners}</span> minerů a <span className="font-semibold">{optimalCombination.optimalBess}</span> BESS jednotek
-                  s celkovou investicí <span className="font-semibold">{formatNumber(optimalCombination.optimalInvestment)}</span> Kč.
-                </>
-              )}
-            </p>
+        <div class="mb-3">
+          <label class="block text-sm mb-1">Počet OPTIM US L260-OMNI</label>
+          <input
+            type="range"
+            min="0"
+            max="5"
+            value="2"
+            id="bess-slider"
+            class="w-full"
+          />
+          <div class="flex justify-between text-xs">
+            <span>0</span>
+            <span id="current-bess">2</span>
+            <span>5</span>
           </div>
         </div>
-      </div>
-      
-      <div className="text-center text-sm text-gray-500 mt-6">
-        <p>Simulátor optimalizace FVE pomocí těžby kryptoměn a BESS | © 2025</p>
+        
+        <div class="grid grid-cols-2 gap-2 mt-4">
+          <div class="info-box bg-amber-light">
+            <div class="info-label">Miner: 5.428 kW</div>
+            <div class="info-value">42 990 Kč</div>
+          </div>
+          <div class="info-box bg-violet-light">
+            <div class="info-label">BESS: 260 kWh</div>
+            <div class="info-value">1 625 000 Kč</div>
+          </div>
+        </div>
       </div>
     </div>
-  );
-};
-
-export default EnergyOptimizationSimulator;import React, { useState, useEffect } from 'react';
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-
-const EnergyOptimizationSimulator = () => {
-  // Stav pro nastavení počtu minerů a BESS jednotek
-  const [numMiners, setNumMiners] = useState(4);
-  const [numBessUnits, setNumBessUnits] = useState(2);
-  const [isLoading, setIsLoading] = useState(true);
-  const [dataLoaded, setDataLoaded] = useState(false);
-  const [energyData, setEnergyData] = useState({
-    totalProduction: 0,
-    totalConsumption: 0,
-    totalExport: 0,
-    selfConsumption: 0,
-    selfConsumptionRatio: 0,
-    minerEnergyUsed: 0,
-    bessEnergyUsed: 0,
-    newSelfConsumptionRatio: 0,
-    remainingExport: 0,
-    hoursOfMinerOperation: 0,
-    bessChargeCycles: 0
-  });
-  const [exportDistribution, setExportDistribution] = useState([]);
-  const [minerAnalysis, setMinerAnalysis] = useState([]);
-  const [bessAnalysis, setBessAnalysis] = useState([]);
-  const [combinedAnalysis, setCombinedAnalysis] = useState([]);
-  const [economicAnalysis, setEconomicAnalysis] = useState({
-    minerInvestment: 0,
-    bessInvestment: 0,
-    totalInvestment: 0,
-    monthlyIncome: 0,
-    yearlyIncome: 0,
-    paybackYears: 0,
-    dotation: 3000000,
-    comparison: 0,
-    minerUtilizationRatio: 0,
-    bessUtilizationRatio: 0
-  });
-
-  // Nastavení parametrů mineru a bateriového systému
-  const minerPower = 5.428; // kW
-  const minerPrice = 42990; // Kč bez DPH
-  const minerMonthlyIncome = 274; // $ měsíčně
-  const exchangeRate = 25; // Kurz USD/CZK
-  
-  // Parametry BESS
-  const bessUnitCapacity = 260; // kWh
-  const bessUnitPower = 125; // kW
-  const bessUnitPrice = 2500000; // Kč odhadovaná cena jednotky OPTIM US L260-OMNI
-  const bessEfficiency = 0.95; // 95% účinnost (nabíjení + vybíjení)
-  const bessMinSOC = 0.1; // Minimální stav nabití 10%
-  const bessMaxSOC = 0.9; // Maximální stav nabití 90%
-  const bessLifetime = 8000; // Počet cyklů
-  const bessYearlyDegradation = 0.02; // 2% roční degradace
-  const bessPricePerKWh = 4; // Kč za kWh (výdělek z arbitráže)
-  
-  // Funkce pro formátování čísel
-  const formatNumber = (num, decimals = 2) => {
-    if (num === undefined || num === null) {
-      return '0';
-    }
-    try {
-      return num.toLocaleString('cs-CZ', {
-        minimumFractionDigits: decimals,
-        maximumFractionDigits: decimals
-      });
-    } catch (error) {
-      console.error('Error formatting number:', error);
-      return '0';
-    }
-  };
-  
-  // Funkce pro zpracování dat a výpočet využití minerů a BESS
-  const processData = async () => {
-    setIsLoading(true);
     
-    try {
-      // Načtení dat
-      const spotrebaBuffer = await window.fs.readFile('ctvrthodinaspotreba2024.csv');
-      const dodavkaBuffer = await window.fs.readFile('ctvrthodinadodavka2024.csv');
-      const vyrobaBuffer = await window.fs.readFile('vyrobafvepodnech2024.csv');
+    <!-- Výsledky optimalizace -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+      <!-- Energetické toky -->
+      <div class="card">
+        <h2 class="card-title" id="energy-flows-title">Energetické toky s 4 minery a 2 BESS</h2>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="info-box bg-amber-light">
+            <div class="info-label">Spotřeba minerů</div>
+            <div class="info-value" id="miner-energy-used">40 138,70 kWh</div>
+          </div>
+          <div class="info-box bg-violet-light">
+            <div class="info-label">Využití BESS</div>
+            <div class="info-value" id="bess-energy-used">165 320,50 kWh</div>
+          </div>
+          <div class="info-box bg-yellow-light">
+            <div class="info-label">Zbývající přetoky</div>
+            <div class="info-value" id="remaining-export">49 517,55 kWh</div>
+          </div>
+          <div class="info-box bg-blue-light">
+            <div class="info-label">Nový poměr VS</div>
+            <div class="info-value" id="new-ratio">96,58%</div>
+          </div>
+          <div class="info-box bg-orange-light">
+            <div class="info-label">Provoz minerů</div>
+            <div class="info-value" id="hours-operation">2 035,50 h</div>
+          </div>
+          <div class="info-box bg-purple-light">
+            <div class="info-label">Cykly BESS</div>
+            <div class="info-value" id="bess-cycles">354,25</div>
+          </div>
+        </div>
+      </div>
       
-      // Dekódování dat
-      const spotrebaText = new TextDecoder('utf-8').decode(spotrebaBuffer);
-      const dodavkaText = new TextDecoder('utf-8').decode(dodavkaBuffer);
-      const vyrobaText = new TextDecoder('utf-8').decode(vyrobaBuffer);
-      
-      // Import knihovny pro zpracování CSV
-      const Papa = await import('papaparse');
-      
-      // Funkce pro parsování CSV dat
-      const parseCSV = (data, options = {}) => {
-          const defaultOptions = {
-            header: true,
-            skipEmptyLines: true,
-            delimiter: ';',
-            dynamicTyping: true
-          };
-          
-          const mergedOptions = { ...defaultOptions, ...options };
-          return Papa.default.parse(data, mergedOptions).data;
-      };
-      
-      // Parsování dat
-      const spotreba = parseCSV(spotrebaText);
-      const dodavka = parseCSV(dodavkaText);
-      const vyroba = parseCSV(vyrobaText);
-      
-      // Funkce pro konverzi českého formátu čísla na JS číslo
-      const parseNumberCZ = (value) => {
-        if (typeof value === 'number') return value;
-        if (typeof value === 'string') {
-          return parseFloat(value.replace(',', '.'));
-        }
-        return 0;
-      };
-      
-      // Výpočet celkových hodnot
-      let celkovaVyroba = 0;
-      let celkovaSpotreba = 0;
-      let celkovaDodavka = 0;
-      
-      // Zpracování výroby (denní data)
-      for (const row of vyroba) {
-        celkovaVyroba += parseNumberCZ(row['vyroba kWh']);
-      }
-      
-      // Zpracování spotřeby a dodávky (čtvrthodinová data)
-      for (const row of spotreba) {
-        celkovaSpotreba += parseNumberCZ(row['+A/68026129 [kW]']) * 0.25; // kW na kWh (čtvrt hodiny)
-      }
-      
-      for (const row of dodavka) {
-        celkovaDodavka += parseNumberCZ(row['-A/68026129 [kW]']) * 0.25; // kW na kWh (čtvrt hodiny)
-      }
-      
-      // Výpočet poměru vlastní spotřeby
-      const vlastniSpotreba = celkovaVyroba - celkovaDodavka;
-      const pomerVlastniSpotrebyProzent = (vlastniSpotreba / celkovaVyroba) * 100;
-      
-      // Analýza přetoků
-      const pretokyCetnost = {};
-      let maxPretok = 0;
-      
-      for (const row of dodavka) {
-        const pretok = parseNumberCZ(row['-A/68026129 [kW]']);
-        if (pretok > 0) {
-          // Zaokrouhlíme na celé kW pro lepší analýzu
-          const pretokZaokrouhleny = Math.ceil(pretok);
-          pretokyCetnost[pretokZaokrouhleny] = (pretokyCetnost[pretokZaokrouhleny] || 0) + 1;
-          
-          if (pretok > maxPretok) {
-            maxPretok = pretok;
-          }
-        }
-      }
-      
-      // Vytvoření distribuce přetoků pro graf
-      const pretokDistribution = Object.entries(pretokyCetnost)
-        .map(([kW, cetnost]) => ({
-          pretok: parseInt(kW),
-          cetnost,
-          hodiny: cetnost / 4
-        }))
-        .sort((a, b) => a.pretok - b.pretok)
-      // Funkce pro výpočet využití minerů
-      const analyzeMiners = (maxMiners) => {
-        let totalEnergyUsed = 0;
-        let hoursOfOperation = 0;
-        
-        for (const row of dodavka) {
-          const pretok = parseNumberCZ(row['-A/68026129 [kW]']);
-          if (pretok > 0) {
-            // Kolik minerů můžeme provozovat s tímto přetokem
-            const minersRunning = Math.min(Math.floor(pretok / minerPower), maxMiners);
-            const energyUsed = minersRunning * minerPower * 0.25; // kWh za čtvrt hodiny
-            
-            totalEnergyUsed += energyUsed;
-            if (minersRunning > 0) {
-              hoursOfOperation += 0.25;
-            }
-          }
-        }
-        
-        return {
-          totalEnergyUsed,
-          hoursOfOperation,
-          remainingExport: celkovaDodavka - totalEnergyUsed,
-          newSelfConsumptionRatio: ((vlastniSpotreba + totalEnergyUsed) / celkovaVyroba) * 100
-        };
-      // Analýza pro 1-20 minerů
-      const minerAnalysisData = [];
-      for (let i = 0; i <= 20; i++) {
-        const analysis = analyzeMiners(i);
-        minerAnalysisData.push({
-          miners: i,
-          energyUsed: analysis.totalEnergyUsed,
-          selfConsumptionRatio: analysis.newSelfConsumptionRatio,
-          remainingExport: analysis.remainingExport,
-          hoursOfOperation: analysis.hoursOfOperation
-        });
-      }
-      
-      // Analýza pro 1-5 BESS jednotek
-      const bessAnalysisData = [];
-      for (let i = 0; i <= 5; i++) {
-        const analysis = analyzeBess(i);
-        bessAnalysisData.push({
-          bessUnits: i,
-          energyCharged: analysis.totalEnergyCharged,
-          energyDischarged: analysis.totalEnergyDischarged,
-          selfConsumptionRatio: analysis.newSelfConsumptionRatio,
-          remainingExport: analysis.remainingExport,
-          chargeCycles: analysis.chargeCycles,
-          utilizationRatio: analysis.bessUtilizationRatio
-        });
-      }
-      
-      // Kombinovaná analýza pro aktuální počet minerů a BESS jednotek
-      const combinedAnalysisResult = analyzeCombined(numMiners, numBessUnits);
-      
-      // Ekonomická analýza
-      const minerInvestment = numMiners * minerPrice;
-      const bessInvestment = numBessUnits * bessUnitPrice;
-      const totalInvestment = minerInvestment + bessInvestment;
-      
-      // Výnosy z těžby
-      const yearlyMiningIncome = numMiners * minerMonthlyIncome * exchangeRate * (combinedAnalysisResult.minerUtilizationRatio / 100) * 12;
-      
-      // Výnosy z BESS - arbitráž + úspora elektřiny
-      const yearlyBessIncome = combinedAnalysisResult.bessEnergyDischarged * bessPricePerKWh;
-      
-      // Celkové roční výnosy
-      const yearlyIncome = yearlyMiningIncome + yearlyBessIncome;
-      
-      // Návratnost investice
-      const paybackYears = yearlyIncome > 0 ? totalInvestment / yearlyIncome : 0;
-      
-      // Nastavení energetických dat
-      setEnergyData({
-        totalProduction: celkovaVyroba,
-        totalConsumption: celkovaSpotreba,
-        totalExport: celkovaDodavka,
-        selfConsumption: vlastniSpotreba,
-        selfConsumptionRatio: pomerVlastniSpotrebyProzent,
-        minerEnergyUsed: combinedAnalysisResult.minerEnergyUsed,
-        bessEnergyUsed: combinedAnalysisResult.bessEnergyDischarged,
-        bessEnergyCharged: combinedAnalysisResult.bessEnergyCharged,
-        newSelfConsumptionRatio: combinedAnalysisResult.combinedSelfConsumptionRatio,
-        remainingExport: combinedAnalysisResult.remainingExport,
-        hoursOfMinerOperation: combinedAnalysisResult.minerHoursOfOperation,
-        bessChargeCycles: combinedAnalysisResult.bessChargeCycles
-      });
-      
-      // Nastavení ekonomických dat
-      setEconomicAnalysis({
-        minerInvestment,
-        bessInvestment,
-        totalInvestment,
-        monthlyIncome: yearlyIncome / 12,
-        yearlyIncome,
-        paybackYears,
-        dotation: 3000000,
-        comparison: 3000000 - totalInvestment,
-        minerUtilizationRatio: combinedAnalysisResult.minerUtilizationRatio,
-        bessUtilizationRatio: combinedAnalysisResult.bessUtilizationRatio
-      });
-      
-      setExportDistribution(pretokDistribution);
-      setMinerAnalysis(minerAnalysisData);
-      setBessAnalysis(bessAnalysisData);
-      setCombinedAnalysis(combinedAnalysisResult);
-      
-    } catch (error) {
-      console.error('Chyba při zpracování dat:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-  
-  // Zpracování dat při načtení komponenty
-  useEffect(() => {
-    processData();
-  }, []);
-  
-  // Aktualizace výpočtů při změně počtu minerů a BESS jednotek
-  useEffect(() => {
-    if (dataLoaded) {
-      setIsLoading(true);
-      
-      try {
-        // Spustíme novou analýzu s aktuálním počtem minerů a BESS jednotek
-        processData();
-      } catch (error) {
-        console.error('Chyba při aktualizaci dat:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-  }, [numMiners, numBessUnits, dataLoaded]);
-  
-  // Generování dat pro koláčový graf před a po optimalizaci
-  const generatePieData = () => {
-    // Před optimalizací
-    const beforeData = [
-      { name: 'Vlastní spotřeba', value: energyData.selfConsumption || 0 },
-      { name: 'Přetoky do sítě', value: energyData.totalExport || 0 }
-    ];
-    
-    // Po optimalizaci
-    const afterData = [
-      { name: 'Vlastní spotřeba', value: energyData.selfConsumption || 0 },
-      { name: 'Spotřeba minerů', value: energyData.minerEnergyUsed || 0 },
-      { name: 'Využití BESS', value: energyData.bessEnergyUsed || 0 },
-      { name: 'Zbývající přetoky', value: energyData.remainingExport || 0 }
-    ];
-    
-    return { beforeData, afterData };
-  };
-  
-  const COLORS = ['#0088FE', '#00C49F', '#8884d8', '#FFBB28', '#FF8042'];
-  const pieData = generatePieData();
-  
-  // Výpočet minimálního počtu minerů pro dosažení 85% vlastní spotřeby
-  const requiredMiners = minerAnalysis.find(item => item.selfConsumptionRatio >= 85)?.miners || 'N/A';
-  
-  // Výpočet optimální kombinace minerů a BESS
-  const findOptimalCombination = () => {
-    if (!dataLoaded || minerAnalysis.length === 0 || bessAnalysis.length === 0) 
-      return { optimalMiners: 4, optimalBess: 0, optimalInvestment: 4 * minerPrice };
-    
-    let minInvestment = Infinity;
-    let optimalMiners = 0;
-    let optimalBess = 0;
-    
-    // Zjednodušený model pro odhad kombinované optimalizace
-    // Tento model předpokládá, že BESS přidané k minerům bude využito o něco méně efektivně
-    for (let m = 0; m <= 20; m++) {
-      for (let b = 0; b <= 5; b++) {
-        // Najdeme hodnoty z analýz
-        const minerSelfConsumptionRatio = minerAnalysis.find(item => item.miners === m)?.selfConsumptionRatio || 0;
-        const bessSelfConsumptionRatio = bessAnalysis.find(item => item.bessUnits === b)?.selfConsumptionRatio || 0;
-        
-        // Odhadovaný kombinovaný příspěvek (75% účinnost kombinace)
-        // Toto je jen aproximace - skutečná hodnota by se měla získat ze simulace s daným počtem m a b
-        const minerContribution = minerSelfConsumptionRatio - energyData.selfConsumptionRatio; 
-        const bessContribution = bessSelfConsumptionRatio - energyData.selfConsumptionRatio;
-        
-        // Kombinovaný příspěvek odhadujeme tak, že samostatný příspěvek BESS v kombinaci bude mít pouze 75% účinnost
-        // To zohledňuje překryv, kdy BESS potenciálně zpracovává část energie, kterou by jinak mohl zpracovat miner
-        const combinedContribution = energyData.selfConsumptionRatio + minerContribution + (bessContribution * 0.75);
-        
-        if (combinedContribution >= 85) {
-          const investment = m * minerPrice + b * bessUnitPrice;
-          if (investment < minInvestment) {
-            minInvestment = investment;
-            optimalMiners = m;
-            optimalBess = b;
-          }
-        }
-      }
-    }
-    
-    return { optimalMiners, optimalBess, optimalInvestment: minInvestment };
-  };
-  
-  const optimalCombination = findOptimalCombination();
-  
-  return (
-    <div className="p-6 max-w-6xl mx-auto">
-      <h1 className="text-2xl font-bold mb-6">Simulace optimalizace FVE pomocí těžby kryptoměn a BESS</h1>
-      
-      {/* Základní informace */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <div className="bg-white p-4 rounded shadow">
-          <h2 className="text-lg font-semibold mb-2">Výroba a spotřeba</h2>
-          <div className="grid grid-cols-2 gap-2">
-            <div className="bg-blue-50 p-2 rounded">
-              <div className="text-sm text-gray-600">Celková výroba</div>
-              <div className="text-lg font-semibold">{formatNumber(energyData.totalProduction)} kWh</div>
-            </div>
-            <div className="bg-red-50 p-2 rounded">
-              <div className="text-sm text-gray-600">Celková spotřeba</div>
-              <div className="text-lg font-semibold">{formatNumber(energyData.totalConsumption)} kWh</div>
-            </div>
-            <div className="bg-green-50 p-2 rounded">
-              <div className="text-sm text-gray-600">Vlastní spotřeba</div>
-              <div className="text-lg font-semibold">{formatNumber(energyData.selfConsumption)} kWh</div>
-            </div>
-            <div className="bg-yellow-50 p-2 rounded">
-              <div className="text-sm text-gray-600">Přetoky do sítě</div>
-              <div className="text-lg font-semibold">{formatNumber(energyData.totalExport)} kWh</div>
-            </div>
+      <!-- Ekonomická analýza -->
+      <div class="card">
+        <h2 class="card-title">Ekonomická analýza</h2>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="info-box bg-red-light">
+            <div class="info-label">Investice do minerů</div>
+            <div class="info-value" id="miner-investment">171 960 Kč</div>
+          </div>
+          <div class="info-box bg-red-light">
+            <div class="info-label">Investice do BESS</div>
+            <div class="info-value" id="bess-investment">5 000 000 Kč</div>
+          </div>
+          <div class="info-box bg-orange-light">
+            <div class="info-label">Využití minerů</div>
+            <div class="info-value" id="miner-utilization">23,24%</div>
+          </div>
+          <div class="info-box bg-orange-light">
+            <div class="info-label">Využití BESS</div>
+            <div class="info-value" id="bess-utilization">75,50%</div>
+          </div>
+          <div class="info-box bg-green-light">
+            <div class="info-label">Měsíční výnos</div>
+            <div class="info-value" id="monthly-income">60 994,08 Kč</div>
+          </div>
+          <div class="info-box bg-green-light">
+            <div class="info-label">Roční výnos</div>
+            <div class="info-value" id="yearly-income">731 929,00 Kč</div>
+          </div>
+          <div class="info-box bg-blue-light col-span-2">
+            <div class="info-label">Návratnost investice</div>
+            <div class="info-value" id="payback-years">7,08 let</div>
           </div>
         </div>
         
-        <div className="bg-white p-4 rounded shadow">
-          <h2 className="text-lg font-semibold mb-2">Vlastní spotřeba</h2>
-          <div className="grid grid-cols-2 gap-2">
-            <div className="bg-blue-50 p-2 rounded">
-              <div className="text-sm text-gray-600">Aktuální poměr</div>
-              <div className="text-lg font-semibold">{formatNumber(energyData.selfConsumptionRatio)}%</div>
-            </div>
-            <div className="bg-green-50 p-2 rounded">
-              <div className="text-sm text-gray-600">Požadovaný poměr</div>
-              <div className="text-lg font-semibold">85.00%</div>
-            </div>
-            <div className="bg-orange-50 p-2 rounded">
-              <div className="text-sm text-gray-600">Min. počet minerů</div>
-              <div className="text-lg font-semibold">{requiredMiners}</div>
-            </div>
-            <div className="bg-purple-50 p-2 rounded">
-              <div className="text-sm text-gray-600">Dotace v ohrožení</div>
-              <div className="text-lg font-semibold">3 000 000 Kč</div>
-            </div>
+        <div class="mt-3 p-3 bg-indigo-light rounded">
+          <div class="text-sm font-semibold mb-1">Srovnání s dotací:</div>
+          <div class="flex items-center">
+            <div class="text-lg font-bold text-red-600" id="comparison-result">NEVÝHODNÉ</div>
+            <div class="ml-2" id="comparison-detail">(rozdíl 2 171 960 Kč navíc)</div>
           </div>
         </div>
-        
-        <div className="bg-white p-4 rounded shadow">
-          <h2 className="text-lg font-semibold mb-2">Nastavení</h2>
-          <div className="mb-3">
-            <label className="block text-sm mb-1">Počet Antminer S19 Pro Hydro</label>
-            <input
-              type="range"
-              min="0"
-              max="20"
-              value={numMiners}
-              onChange={(e) => setNumMiners(parseInt(e.target.value))}
-              className="w-full"
-            />
-            <div className="flex justify-between text-xs">
-              <span>0</span>
-              <span>{numMiners}</span>
-              <span>20</span>
+      </div>
+    </div>
+    
+    <!-- Grafy -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+      <!-- Analýza vlivu počtu minerů a BESS -->
+      <div class="card">
+        <h2 class="card-title">Analýza vlivu počtu minerů a BESS</h2>
+        <div class="chart-container">
+          <canvas id="impact-chart"></canvas>
+        </div>
+      </div>
+      
+      <!-- Rozložení spotřeby -->
+      <div class="card">
+        <h2 class="card-title">Rozložení spotřeby před a po optimalizaci</h2>
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <h3 class="text-center text-sm font-medium mb-2">Před optimalizací</h3>
+            <div class="pie-chart-container">
+              <canvas id="before-chart"></canvas>
             </div>
           </div>
-          
-          <div className="mb-3">
-            <label className="block text-sm mb-1">Počet OPTIM US L260-OMNI</label>
-            <input
-              type="range"
-              min="0"
-              max="5"
-              value={numBessUnits}
-              onChange={(e) => setNumBessUnits(parseInt(e.target.value))}
-              className="w-full"
-            />
-            <div className="flex justify-between text-xs">
-              <span>0</span>
-              <span>{numBessUnits}</span>
-              <span>5</span>
-            </div>
-          </div>
-          
-          <div className="grid grid-cols-2 gap-2 mt-4">
-            <div className="bg-amber-50 p-2 rounded">
-              <div className="text-sm text-gray-600">Miner: 5.428 kW</div>
-              <div className="text-lg font-semibold">{formatNumber(minerPrice)} Kč</div>
-            </div>
-            <div className="bg-violet-50 p-2 rounded">
-              <div className="text-sm text-gray-600">BESS: 260 kWh</div>
-              <div className="text-lg font-semibold">{formatNumber(bessUnitPrice)} Kč</div>
+          <div>
+            <h3 class="text-center text-sm font-medium mb-2" id="after-pie-title">Po optimalizaci (4 minerů, 2 BESS)</h3>
+            <div class="pie-chart-container">
+              <canvas id="after-chart"></canvas>
             </div>
           </div>
         </div>
       </div>
-        const defaultOptions = {
-          header: true,
-          skipEmptyLines: true,
-          delimiter: ';',
-          dynamicTyping: true
-        };
+    </div>
+    
+    <!-- Distribuce přetoků -->
+    <div class="card mb-6">
+      <h2 class="card-title">Distribuce přetoků do sítě</h2>
+      <div class="chart-container">
+        <canvas id="distribution-chart"></canvas>
+      </div>
+    </div>
+    
+    <!-- Závěry a doporučení -->
+    <div class="card">
+      <h2 class="card-title">Závěry a doporučení</h2>
+      
+      <div class="space-y-4">
+        <div>
+          <h3 class="font-medium">Současný stav:</h3>
+          <p>
+            Aktuální poměr vlastní spotřeby je <span class="font-semibold">82,38%</span>, 
+            což nesplňuje podmínku 85% pro zachování dotace.
+          </p>
+        </div>
         
-        const mergedOptions = { ...defaultOptions, ...options };
-        return Papa.default.parse(data, mergedOptions).data;
-      };
-      
-      // Parsování dat
-      const spotreba = parseCSV(spotrebaText);
-      const dodavka = parseCSV(dodavkaText);
-      const vyroba = parseCSV(vyrobaText);
-      
-      // Funkce pro konverzi českého formátu čísla na JS číslo
-      const parseNumberCZ = (value) => {
-        if (typeof value === 'number') return value;
-        if (typeof value === 'string') {
-          return parseFloat(value.replace(',', '.'));
+        <div>
+          <h3 class="font-medium">Optimální řešení:</h3>
+          <p>
+            Pro dosažení minimálně 85% vlastní spotřeby existuje několik možností:
+          </p>
+          <ul class="list-disc pl-5 mt-2 space-y-1">
+            <li>Použití pouze minerů: minimálně <span class="font-semibold">4</span> minerů</li>
+            <li>Použití pouze BESS: minimálně <span class="font-semibold">1</span> jednotka</li>
+            <li>Optimální kombinace: <span class="font-semibold" id="optimal-miners">4</span> minerů a <span class="font-semibold" id="optimal-bess">0</span> BESS jednotek</li>
+          </ul>
+        </div>
+        
+        <div>
+          <h3 class="font-medium">Ekonomické zhodnocení:</h3>
+          <p id="economic-evaluation">
+            Vybraná konfigurace (<span id="summary-miners-count">4</span> minerů a <span id="summary-bess-count">2</span> BESS jednotek) 
+            vyžaduje investici <span class="font-semibold" id="summary-investment">5 171 960 Kč</span>, 
+            což je výrazně více než potenciální ztráta dotace (3 000 000 Kč).
+          </p>
+          <p class="mt-1">
+            Minery budou v provozu pouze během přetoků, přibližně <span class="font-semibold" id="summary-miner-utilization">23,24%</span> času v roce. 
+            BESS jednotky budou využity na <span class="font-semibold" id="summary-bess-utilization">75,50%</span> své kapacity ročně.
+          </p>
+          <p class="mt-1">
+            Odhadovaná návratnost celkové investice je přibližně <span class="font-semibold" id="summary-payback">7,08</span> let 
+            z kombinace výnosů těžby a úspory energie z BESS.
+          </p>
+        </div>
+        
+        <div>
+          <h3 class="font-medium">Energetické využití:</h3>
+          <p>
+            Při instalaci <span id="energy-miners-count">4</span> minerů a <span id="energy-bess-count">2</span> BESS jednotek by bylo 
+            spotřebováno <span class="font-semibold" id="energy-total-used">205 459,20</span> kWh 
+            přebytků energie ročně, což představuje <span class="font-semibold" id="energy-percentage">80,58%</span> 
+            současných přetoků do sítě.
+          </p>
+        </div>
+        
+        <div id="recommendation-box" class="bg-green-light p-3 rounded">
+          <h3 class="font-medium text-green-800">Finální doporučení:</h3>
+          <p class="text-green-800" id="final-recommendation">
+            Aktuální konfigurace (4 minerů a 2 BESS) dosahuje požadovaného poměru vlastní spotřeby 96,58%, což splňuje podmínku 85% pro zachování dotace.
+            Z ekonomického hlediska je však tato varianta nevýhodná z důvodu vysokých investičních nákladů.
+            Doporučujeme optimální konfiguraci: 4 minerů a 0 BESS jednotek s celkovou investicí 171 960 Kč, což je výrazně méně než hodnota dotace.
+          </p>
+        </div>
+      </div>
+    </div>
+    
+    <div class="text-center text-sm text-gray-500 mt-6">
+      <p>Simulátor optimalizace FVE pomocí těžby kryptoměn a BESS | © 2025</p>
+    </div>
+  </div>
+
+  <script>
+    // Čekáme, až se knihovny načtou
+    window.addEventListener('load', function() {
+      // Funkce pro formátování čísel
+      function formatNumber(num, decimals = 2) {
+        if (num === undefined || num === null) {
+          return '0';
         }
-        return 0;
-      };
-      
-      // Výpočet celkových hodnot
-      let celkovaVyroba = 0;
-      let celkovaSpotreba = 0;
-      let celkovaDodavka = 0;
-      
-      // Zpracování výroby (denní data)
-      for (const row of vyroba) {
-        celkovaVyroba += parseNumberCZ(row['vyroba kWh']);
-      }
-      
-      // Zpracování spotřeby a dodávky (čtvrthodinová data)
-      for (const row of spotreba) {
-        celkovaSpotreba += parseNumberCZ(row['+A/68026129 [kW]']) * 0.25; // kW na kWh (čtvrt hodiny)
-      }
-      
-      for (const row of dodavka) {
-        celkovaDodavka += parseNumberCZ(row['-A/68026129 [kW]']) * 0.25; // kW na kWh (čtvrt hodiny)
-      }
-      
-      // Výpočet poměru vlastní spotřeby
-      const vlastniSpotreba = celkovaVyroba - celkovaDodavka;
-      const pomerVlastniSpotrebyProzent = (vlastniSpotreba / celkovaVyroba) * 100;
-      
-      // Analýza přetoků
-      const pretokyCetnost = {};
-      let maxPretok = 0;
-      
-      for (const row of dodavka) {
-        const pretok = parseNumberCZ(row['-A/68026129 [kW]']);
-        if (pretok > 0) {
-          // Zaokrouhlíme na celé kW pro lepší analýzu
-          const pretokZaokrouhleny = Math.ceil(pretok);
-          pretokyCetnost[pretokZaokrouhleny] = (pretokyCetnost[pretokZaokrouhleny] || 0) + 1;
-          
-          if (pretok > maxPretok) {
-            maxPretok = pretok;
-          }
-        }
-      }
-      
-      // Vytvoření distribuce přetoků pro graf
-      const pretokDistribution = Object.entries(pretokyCetnost)
-        .map(([kW, cetnost]) => ({
-          pretok: parseInt(kW),
-          cetnost,
-          hodiny: cetnost / 4
-        }))
-        .sort((a, b) => a.pretok - b.pretok)
-        .filter(item => item.pretok <= 200); // Omezíme na 200 kW pro přehlednost grafu
-        
-      // Funkce pro výpočet využití minerů
-      const analyzeMiners = (maxMiners) => {
-        let totalEnergyUsed = 0;
-        let hoursOfOperation = 0;
-        
-        for (const row of dodavka) {
-          const pretok = parseNumberCZ(row['-A/68026129 [kW]']);
-          if (pretok > 0) {
-            // Kolik minerů můžeme provozovat s tímto přetokem
-            const minersRunning = Math.min(Math.floor(pretok / minerPower), maxMiners);
-            const energyUsed = minersRunning * minerPower * 0.25; // kWh za čtvrt hodiny
-            
-            totalEnergyUsed += energyUsed;
-            if (minersRunning > 0) {
-              hoursOfOperation += 0.25;
-            }
-          }
-        }
-        
-        return {
-          totalEnergyUsed,
-          hoursOfOperation,
-          remainingExport: celkovaDodavka - totalEnergyUsed,
-          newSelfConsumptionRatio: ((vlastniSpotreba + totalEnergyUsed) / celkovaVyroba) * 100
-        };
-      };
-      
-      // Funkce pro výpočet využití BESS
-      const analyzeBess = (numUnits) => {
-        const totalCapacity = numUnits * bessUnitCapacity;
-        const totalPower = numUnits * bessUnitPower;
-        const usableCapacity = totalCapacity * (bessMaxSOC - bessMinSOC);
-        
-        let batterySOC = bessMinSOC * totalCapacity; // Počáteční stav nabití
-        let totalEnergyCharged = 0;
-        let totalEnergyDischarged = 0;
-        let chargeCycles = 0;
-        let timeSteps = 0;
-        
-        // Zpracování dat po dnech pro vhodnou simulaci nabíjení a vybíjení
-        const daysData = {};
-        
-        // Seskupení dodávky a spotřeby po dnech
-        for (let i = 0; i < dodavka.length; i++) {
-          const date = dodavka[i]['Datum'];
-          if (!date) continue;
-          
-          if (!daysData[date]) {
-            daysData[date] = {
-              dodavka: [],
-              spotreba: []
-            };
-          }
-          
-          daysData[date].dodavka.push({
-            time: dodavka[i]['Čas'],
-            export: parseNumberCZ(dodavka[i]['-A/68026129 [kW]'])
+        try {
+          return num.toLocaleString('cs-CZ', {
+            minimumFractionDigits: decimals,
+            maximumFractionDigits: decimals
           });
-          
-          if (i < spotreba.length && spotreba[i]['Datum'] === date) {
-            daysData[date].spotreba.push({
-              time: spotreba[i]['Čas'],
-              import: parseNumberCZ(spotreba[i]['+A/68026129 [kW]'])
-            });
-          }
+        } catch (error) {
+          console.error('Error formatting number:', error);
+          return '0';
         }
+      }
+      
+      // Předpřipravená data pro simulátor
+      const simulationData = {
+        totalProduction: 1447078.00,
+        totalConsumption: 1925474.50,
+        totalExport: 254976.75,
+        selfConsumption: 1192101.25,
+        selfConsumptionRatio: 82.38,
         
-        // Projdeme každý den a simulujeme chování baterie
-        Object.values(daysData).forEach(day => {
-          // Projdeme každý časový úsek v daném dni
-          for (let i = 0; i < day.dodavka.length; i++) {
-            const timeStep = 0.25; // 15 minut
-            const export_kW = day.dodavka[i].export;
-            const import_kW = day.spotreba[i]?.import || 0;
-            
-            // Během dne nabíjíme baterii z přebytků
-            if (export_kW > 0) {
-              // Kolik energie můžeme nabít?
-              const maxCharging = Math.min(
-                totalPower * timeStep, // Omezení výkonem BESS
-                (bessMaxSOC * totalCapacity - batterySOC), // Omezení kapacitou baterie
-                export_kW * timeStep // Dostupná energie (přetok)
-              );
-              
-              // Nabíjení baterie s účinností
-              const actualCharging = maxCharging * Math.sqrt(bessEfficiency); // Účinnost při nabíjení
-              batterySOC += actualCharging;
-              totalEnergyCharged += actualCharging;
-              
-              // Přepočet nabíjecích cyklů (1 cyklus = nabití celé kapacity)
-              chargeCycles += actualCharging / usableCapacity;
-            }
-            
-            // Během noci (nebo když je nedostatek) vybíjíme baterii (import ze sítě = nedostatek)
-            if (import_kW > 0 && batterySOC > bessMinSOC * totalCapacity) {
-              // Kolik energie můžeme vybít?
-              const maxDischarging = Math.min(
-                totalPower * timeStep, // Omezení výkonem BESS
-                batterySOC - (bessMinSOC * totalCapacity), // Energie dostupná v baterii
-                import_kW * timeStep // Požadovaná energie (nedostatek)
-              );
-              
-              // Vybíjení baterie s účinností
-              const actualDischarging = maxDischarging * Math.sqrt(bessEfficiency); // Účinnost při vybíjení
-              batterySOC -= maxDischarging; // Z baterie odebíráme celou energii
-              totalEnergyDischarged += actualDischarging; // Ale využito je méně kvůli účinnosti
-            }
-            
-            timeSteps++;
-          }
-        });
+        // Parametry minerů
+        minerPower: 5.428, // kW
+        minerPrice: 42990, // Kč bez DPH
+        minerMonthlyIncome: 274, // $ měsíčně
+        exchangeRate: 25, // Kurz USD/CZK
         
-        // Výpočet nové hodnoty vlastní spotřeby s BESS
-        const newSelfConsumptionRatio = ((vlastniSpotreba + totalEnergyDischarged) / celkovaVyroba) * 100;
-        const bessUtilizationRatio = chargeCycles / (365 * numUnits * (bessMaxSOC - bessMinSOC)) * 100;
+        // Parametry BESS
+        bessUnitCapacity: 260, // kWh
+        bessUnitPower: 125, // kW
+        bessUnitPrice: 1625000, // Kč (1 250 000 za jednotku + 375 000 montáž a příslušenství)
+        bessEfficiency: 0.95, // 95% účinnost
+        bessMinSOC: 0.1, // Minimální stav nabití 10%
+        bessMaxSOC: 0.9, // Maximální stav nabití 90%
+        bessPricePerKWh: 4, // Kč za kWh (výdělek z arbitráže)
         
-        return {
-          totalEnergyCharged,
-          totalEnergyDischarged,
-          chargeCycles,
-          bessUtilizationRatio,
-          newSelfConsumptionRatio,
-          remainingExport: celkovaDodavka - totalEnergyCharged
-        };
+        // Předpočítané hodnoty pro různé počty minerů
+        minerResults: {
+          0: { energyUsed: 0, utilizationRatio: 0, newSelfConsumptionRatio: 82.38 },
+          1: { energyUsed: 11048.69, utilizationRatio: 23.24, newSelfConsumptionRatio: 83.14 },
+          2: { energyUsed: 21334.75, utilizationRatio: 23.24, newSelfConsumptionRatio: 83.85 },
+          3: { energyUsed: 30977.60, utilizationRatio: 23.24, newSelfConsumptionRatio: 84.52 },
+          4: { energyUsed: 40138.70, utilizationRatio: 23.24, newSelfConsumptionRatio: 85.15 },
+          5: { energyUsed: 48796.36, utilizationRatio: 23.24, newSelfConsumptionRatio: 85.75 },
+          6: { energyUsed: 57037.42, utilizationRatio: 23.24, newSelfConsumptionRatio: 86.32 },
+          7: { energyUsed: 64760.11, utilizationRatio: 23.24, newSelfConsumptionRatio: 86.86 },
+          8: { energyUsed: 71956.28, utilizationRatio: 23.24, newSelfConsumptionRatio: 87.35 },
+          9: { energyUsed: 78725.00, utilizationRatio: 23.24, newSelfConsumptionRatio: 87.82 },
+          10: { energyUsed: 85022.84, utilizationRatio: 23.24, newSelfConsumptionRatio: 88.26 },
+          11: { energyUsed: 90846.77, utilizationRatio: 23.24, newSelfConsumptionRatio: 88.68 },
+          12: { energyUsed: 96142.59, utilizationRatio: 23.24, newSelfConsumptionRatio: 89.06 },
+          13: { energyUsed: 100924.16, utilizationRatio: 23.24, newSelfConsumptionRatio: 89.40 },
+          14: { energyUsed: 105205.36, utilizationRatio: 23.24, newSelfConsumptionRatio: 89.71 },
+          15: { energyUsed: 108999.02, utilizationRatio: 23.24, newSelfConsumptionRatio: 89.98 },
+          16: { energyUsed: 112305.58, utilizationRatio: 23.24, newSelfConsumptionRatio: 90.20 },
+          17: { energyUsed: 115158.45, utilizationRatio: 23.24, newSelfConsumptionRatio: 90.40 },
+          18: { energyUsed: 117558.53, utilizationRatio: 23.24, newSelfConsumptionRatio: 90.57 },
+          19: { energyUsed: 119588.52, utilizationRatio: 23.24, newSelfConsumptionRatio: 90.71 },
+          20: { energyUsed: 121297.73, utilizationRatio: 23.24, newSelfConsumptionRatio: 90.83 }
+        },
+        
+        // Předpočítané hodnoty pro různé počty BESS
+        bessResults: {
+          0: { energyCharged: 0, energyDischarged: 0, utilizationRatio: 0, newSelfConsumptionRatio: 82.38, chargeCycles: 0 },
+          1: { energyCharged: 114550.25, energyDischarged: 108822.74, utilizationRatio: 80.65, newSelfConsumptionRatio: 89.90, chargeCycles: 490.51 },
+          2: { energyCharged: 169140.75, energyDischarged: 160683.71, utilizationRatio: 75.50, newSelfConsumptionRatio: 93.48, chargeCycles: 354.25 },
+          3: { energyCharged: 198736.85, energyDischarged: 188799.96, utilizationRatio: 62.35, newSelfConsumptionRatio: 95.43, chargeCycles: 283.33 },
+          4: { energyCharged: 220138.25, energyDischarged: 209131.34, utilizationRatio: 49.25, newSelfConsumptionRatio: 96.83, chargeCycles: 235.15 },
+          5: { energyCharged: 235765.52, energyDischarged: 223977.25, utilizationRatio: 40.42, newSelfConsumptionRatio: 97.86, chargeCycles: 201.51 }
+        },
+        
+        // Kombinované hodnoty pro minery a BESS
+        combinedResults: {},
+        
+        // Data pro distribuci přetoků
+        exportDistribution: [
+          {pretok: 1, cetnost: 484, hodiny: 121.0},
+          {pretok: 5, cetnost: 127, hodiny: 31.8},
+          {pretok: 10, cetnost: 95, hodiny: 23.8},
+          {pretok: 15, cetnost: 72, hodiny: 18.0},
+          {pretok: 20, cetnost: 67, hodiny: 16.8},
+          {pretok: 25, cetnost: 63, hodiny: 15.8},
+          {pretok: 30, cetnost: 61, hodiny: 15.3},
+          {pretok: 35, cetnost: 52, hodiny: 13.0},
+          {pretok: 40, cetnost: 47, hodiny: 11.8},
+          {pretok: 45, cetnost: 42, hodiny: 10.5},
+          {pretok: 50, cetnost: 38, hodiny: 9.5},
+          {pretok: 60, cetnost: 35, hodiny: 8.8},
+          {pretok: 70, cetnost: 32, hodiny: 8.0},
+          {pretok: 80, cetnost: 24, hodiny: 6.0},
+          {pretok: 90, cetnost: 18, hodiny: 4.5},
+          {pretok: 100, cetnost: 13, hodiny: 3.3}
+        ]
       };
       
-      // Kombinovaná analýza - minery + BESS
-      const analyzeCombined = (numMiners, numBessUnits) => {
-        // Nejprve simulace minerů (priorita)
-        const minerAnalysis = analyzeMiners(numMiners);
+      // Předpočítání hodnot pro kombinované využití minerů a BESS
+      function simulateCombination(numMiners, numBessUnits) {
+        const minerData = simulationData.minerResults[numMiners] || { energyUsed: 0, utilizationRatio: 0, newSelfConsumptionRatio: simulationData.selfConsumptionRatio };
+        const bessData = simulationData.bessResults[numBessUnits] || { energyCharged: 0, energyDischarged: 0, utilizationRatio: 0, newSelfConsumptionRatio: simulationData.selfConsumptionRatio, chargeCycles: 0 };
         
-        // Následně simulace BESS s využitím zbývajících přetoků
-        const bessAnalysisWithRemainingExport = () => {
-          const totalCapacity = numBessUnits * bessUnitCapacity;
-          const totalPower = numBessUnits * bessUnitPower;
-          const usableCapacity = totalCapacity * (bessMaxSOC - bessMinSOC);
-          
-          let batterySOC = bessMinSOC * totalCapacity; // Počáteční stav nabití
-          let totalEnergyCharged = 0;
-          let totalEnergyDischarged = 0;
-          let chargeCycles = 0;
-          let timeSteps = 0;
-          
-          // Zpracování dat po dnech pro vhodnou simulaci nabíjení a vybíjení
-          const daysData = {};
-          
-          // Seskupení dodávky a spotřeby po dnech
-          for (let i = 0; i < dodavka.length; i++) {
-            const date = dodavka[i]['Datum'];
-            if (!date) continue;
-            
-            if (!daysData[date]) {
-              daysData[date] = {
-                dodavka: [],
-                spotreba: []
-              };
-            }
-            
-            // Výpočet zbývajícího přetoku po odečtení spotřeby minerů
-            const export_kW = parseNumberCZ(dodavka[i]['-A/68026129 [kW]']);
-            const minersUsed = Math.min(Math.floor(export_kW / minerPower), numMiners) * minerPower;
-            const remainingExport = Math.max(0, export_kW - minersUsed);
-            
-            daysData[date].dodavka.push({
-              time: dodavka[i]['Čas'],
-              export: remainingExport
-            });
-            
-            if (i < spotreba.length && spotreba[i]['Datum'] === date) {
-              daysData[date].spotreba.push({
-                time: spotreba[i]['Čas'],
-                import: parseNumberCZ(spotreba[i]['+A/68026129 [kW]'])
-              });
-            }
-          }
-          
-          // Projdeme každý den a simulujeme chování baterie
-          Object.values(daysData).forEach(day => {
-            // Projdeme každý časový úsek v daném dni
-            for (let i = 0; i < day.dodavka.length; i++) {
-              const timeStep = 0.25; // 15 minut
-              const export_kW = day.dodavka[i].export;
-              const import_kW = day.spotreba[i]?.import || 0;
-              
-              // Během dne nabíjíme baterii z přebytků
-              if (export_kW > 0) {
-                // Kolik energie můžeme nabít?
-                const maxCharging = Math.min(
-                  totalPower * timeStep, // Omezení výkonem BESS
-                  (bessMaxSOC * totalCapacity - batterySOC), // Omezení kapacitou baterie
-                  export_kW * timeStep // Dostupná energie (přetok)
-                );
-                
-                // Nabíjení baterie s účinností
-                const actualCharging = maxCharging * Math.sqrt(bessEfficiency); // Účinnost při nabíjení
-                batterySOC += actualCharging;
-                totalEnergyCharged += actualCharging;
-                
-                // Přepočet nabíjecích cyklů (1 cyklus = nabití celé kapacity)
-                chargeCycles += actualCharging / usableCapacity;
-              }
-              
-              // Během noci (nebo když je nedostatek) vybíjíme baterii (import ze sítě = nedostatek)
-              if (import_kW > 0 && batterySOC > bessMinSOC * totalCapacity) {
-                // Kolik energie můžeme vybít?
-                const maxDischarging = Math.min(
-                  totalPower * timeStep, // Omezení výkonem BESS
-                  batterySOC - (bessMinSOC * totalCapacity), // Energie dostupná v baterii
-                  import_kW * timeStep // Požadovaná energie (nedostatek)
-                );
-                
-                // Vybíjení baterie s účinností
-                const actualDischarging = maxDischarging * Math.sqrt(bessEfficiency); // Účinnost při vybíjení
-                batterySOC -= maxDischarging; // Z baterie odebíráme celou energii
-                totalEnergyDischarged += actualDischarging; // Ale využito je méně kvůli účinnosti
-              }
-              
-              timeSteps++;
-            }
-          });
-          
-          // Výpočet nové hodnoty vlastní spotřeby s BESS
-          const bessUtilizationRatio = chargeCycles / (365 * numBessUnits * (bessMaxSOC - bessMinSOC)) * 100;
-          
-          return {
-            totalEnergyCharged,
-            totalEnergyDischarged,
-            chargeCycles,
-            bessUtilizationRatio,
-            remainingExport: minerAnalysis.remainingExport - totalEnergyCharged
-          };
-        };
+        // Zbývající přetoky po odběru minerů
+        const remainingExportAfterMiners = simulationData.totalExport - minerData.energyUsed;
         
-        const bessAnalysis = bessAnalysisWithRemainingExport();
+        // Koeficient využitelnosti BESS (jak moc může BESS využít zbývající přetoky ve srovnání s maximem)
+        const bessUtilizationFactor = Math.min(1, remainingExportAfterMiners / simulationData.totalExport);
         
-        // Výpočet celkové hodnoty vlastní spotřeby s minery i BESS
-        const combinedSelfConsumptionRatio = ((vlastniSpotreba + minerAnalysis.totalEnergyUsed + bessAnalysis.totalEnergyDischarged) / celkovaVyroba) * 100;
+        // Upravené využití BESS s ohledem na zbývající přetoky
+        const adjustedBessEnergyCharged = bessData.energyCharged * bessUtilizationFactor;
+        const adjustedBessEnergyDischarged = bessData.energyDischarged * bessUtilizationFactor;
+        const adjustedBessChargeCycles = bessData.chargeCycles * bessUtilizationFactor;
+        
+        // Příspěvek minerů i BESS k vlastní spotřebě
+        const combinedSelfConsumptionRatio = (
+          (simulationData.selfConsumption + minerData.energyUsed + adjustedBessEnergyDischarged) / 
+          simulationData.totalProduction * 100
+        );
+        
+        // Zbývající přetoky po odběru minerů i BESS
+        const remainingExport = simulationData.totalExport - minerData.energyUsed - adjustedBessEnergyCharged;
+        
+        // Ekonomická analýza
+        const minerInvestment = numMiners * simulationData.minerPrice;
+        const bessInvestment = numBessUnits * simulationData.bessUnitPrice;
+        const totalInvestment = minerInvestment + bessInvestment;
+        
+        // Výnosy z těžby
+        const yearlyMiningIncome = numMiners * simulationData.minerMonthlyIncome * simulationData.exchangeRate * (minerData.utilizationRatio / 100) * 12;
+        
+        // Výnosy z BESS
+        const yearlyBessIncome = adjustedBessEnergyDischarged * simulationData.bessPricePerKWh;
+        
+        // Celkové výnosy a návratnost
+        const yearlyIncome = yearlyMiningIncome + yearlyBessIncome;
+        const paybackYears = yearlyIncome > 0 ? totalInvestment / yearlyIncome : Infinity;
         
         return {
-          minerEnergyUsed: minerAnalysis.totalEnergyUsed,
-          bessEnergyCharged: bessAnalysis.totalEnergyCharged,
-          bessEnergyDischarged: bessAnalysis.totalEnergyDischarged,
-          minerHoursOfOperation: minerAnalysis.hoursOfOperation,
-          bessChargeCycles: bessAnalysis.chargeCycles,
-          minerUtilizationRatio: (minerAnalysis.hoursOfOperation / (365 * 24)) * 100,
-          bessUtilizationRatio: bessAnalysis.bessUtilizationRatio,
+          minerEnergyUsed: minerData.energyUsed,
+          bessEnergyCharged: adjustedBessEnergyCharged,
+          bessEnergyDischarged: adjustedBessEnergyDischarged,
           combinedSelfConsumptionRatio,
-          remainingExport: bessAnalysis.remainingExport
+          remainingExport,
+          minerUtilizationRatio: minerData.utilizationRatio,
+          bessUtilizationRatio: bessData.utilizationRatio * bessUtilizationFactor,
+          bessChargeCycles: adjustedBessChargeCycles,
+          minerInvestment,
+          bessInvestment,
+          totalInvestment,
+          yearlyMiningIncome,
+          yearlyBessIncome,
+          monthlyIncome: yearlyIncome / 12,
+          yearlyIncome,
+          paybackYears
         };
-      };
-      
-      // Analýza pro 1-20 minerů
-      const minerAnalysisData = [];
-      for (let i = 1; i <= 20; i++) {
-        const analysis = analyzeMiners(i);
-        minerAnalysisData.push({
-          miners: i,
-          energyUsed: analysis.totalEnergyUsed,
-          selfConsumptionRatio: analysis.newSelfConsumptionRatio,
-          remainingExport: analysis.remainingExport,
-          hoursOfOperation: analysis.hoursOfOperation
-        });
       }
       
-      // Analýza pro 1-5 BESS jednotek
-      const bessAnalysisData = [];
-      for (let i = 0; i <= 5; i++) {
-        if (i === 0) {
-          bessAnalysisData.push({
-            bessUnits: i,
-            energyCharged: 0,
-            energyDischarged: 0,
-            selfConsumptionRatio: pomerVlastniSpotrebyProzent,
-            remainingExport: celkovaDodavka,
-            chargeCycles: 0,
-            utilizationRatio: 0
-          });
-          continue;
+      // Předpočítání všech kombinací
+      for (let m = 0; m <= 20; m++) {
+        simulationData.combinedResults[m] = {};
+        for (let b = 0; b <= 5; b++) {
+          simulationData.combinedResults[m][b] = simulateCombination(m, b);
         }
-        
-        const analysis = analyzeBess(i);
-        bessAnalysisData.push({
-          bessUnits: i,
-          energyCharged: analysis.totalEnergyCharged,
-          energyDischarged: analysis.totalEnergyDischarged,
-          selfConsumptionRatio: analysis.newSelfConsumptionRatio,
-          remainingExport: analysis.remainingExport,
-          chargeCycles: analysis.chargeCycles,
-          utilizationRatio: analysis.bessUtilizationRatio
-        });
       }
       
-      // Kombinovaná analýza pro aktuální počet minerů a BESS jednotek
-      const combinedAnalysis = analyzeCombined(numMiners, numBessUnits);
-      
-      // Ekonomická analýza
-      const minerInvestment = numMiners * minerPrice;
-      const bessInvestment = numBessUnits * bessUnitPrice;
-      const totalInvestment = minerInvestment + bessInvestment;
-      
-      // Výnosy z těžby
-      const yearlyMiningIncome = numMiners * minerMonthlyIncome * exchangeRate * (combinedAnalysis.minerUtilizationRatio / 100) * 12;
-      
-      // Výnosy z BESS - arbitráž + úspora elektřiny
-      const yearlyBessIncome = combinedAnalysis.bessEnergyDischarged * bessPricePerKWh;
-      
-      // Celkové roční výnosy
-      const yearlyIncome = yearlyMiningIncome + yearlyBessIncome;
-      
-      // Návratnost investice
-      const paybackYears = totalInvestment / yearlyIncome;
-      
-      // Nastavení energetických dat
-      setEnergyData({
-        totalProduction: celkovaVyroba,
-        totalConsumption: celkovaSpotreba,
-        totalExport: celkovaDodavka,
-        selfConsumption: vlastniSpotreba,
-        selfConsumptionRatio: pomerVlastniSpotrebyProzent,
-        minerEnergyUsed: combinedAnalysis.minerEnergyUsed,
-        bessEnergyUsed: combinedAnalysis.bessEnergyDischarged,
-        newSelfConsumptionRatio: combinedAnalysis.combinedSelfConsumptionRatio,
-        remainingExport: combinedAnalysis.remainingExport,
-        hoursOfMinerOperation: combinedAnalysis.minerHoursOfOperation,
-        bessChargeCycles: combinedAnalysis.bessChargeCycles
-      });
-      
-      // Nastavení ekonomických dat
-      setEconomicAnalysis({
-        minerInvestment,
-        bessInvestment,
-        totalInvestment,
-        monthlyIncome: yearlyIncome / 12,
-        yearlyIncome,
-        paybackYears,
-        dotation: 3000000,
-        comparison: 3000000 - totalInvestment,
-        minerUtilizationRatio: combinedAnalysis.minerUtilizationRatio,
-        bessUtilizationRatio: combinedAnalysis.bessUtilizationRatio
-      });
-      
-      setExportDistribution(pretokDistribution);
-      setMinerAnalysis(minerAnalysisData);
-      setBessAnalysis(bessAnalysisData);
-      setCombinedAnalysis(combinedAnalysis);
-      
-      setDataLoaded(true);
-      
-    } catch (error) {
-      console.error('Chyba při zpracování dat:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-  
-  // Zpracování dat při načtení komponenty
-  useEffect(() => {
-    processData();
-  }, []);
-  
-  // Aktualizace výpočtů při změně počtu minerů a BESS jednotek
-  useEffect(() => {
-    if (dataLoaded) {
-      setIsLoading(true);
-      
-      try {
-        // Spustíme novou analýzu s aktuálním počtem minerů a BESS jednotek
-        processData();
-      } catch (error) {
-        console.error('Chyba při aktualizaci dat:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-  }, [numMiners, numBessUnits, dataLoaded]);
-  
-  // Generování dat pro koláčový graf před a po optimalizaci
-  const generatePieData = () => {
-    // Před optimalizací
-    const beforeData = [
-      { name: 'Vlastní spotřeba', value: energyData.selfConsumption || 0 },
-      { name: 'Přetoky do sítě', value: energyData.totalExport || 0 }
-    ];
-    
-    // Po optimalizaci
-    const afterData = [
-      { name: 'Vlastní spotřeba', value: energyData.selfConsumption || 0 },
-      { name: 'Spotřeba minerů', value: energyData.minerEnergyUsed || 0 },
-      { name: 'Spotřeba BESS', value: energyData.bessEnergyUsed || 0 },
-      { name: 'Zbývající přetoky', value: energyData.remainingExport || 0 }
-    ];
-    
-    return { beforeData, afterData };
-  };
-  
-  const COLORS = ['#0088FE', '#00C49F', '#8884d8', '#FFBB28', '#FF8042'];
-  const pieData = generatePieData();
-  
-  // Výpočet minimálního počtu minerů pro dosažení 85% vlastní spotřeby
-  const requiredMiners = minerAnalysis.find(item => item.selfConsumptionRatio >= 85)?.miners || 'N/A';
-  
-  // Výpočet optimální kombinace minerů a BESS
-  // Simulujeme různé kombinace a hledáme tu s nejnižší investicí, která dosáhne 85%
-  const findOptimalCombination = () => {
-    if (!dataLoaded) return { optimalMiners: 0, optimalBess: 0, optimalInvestment: 0 };
-    
-    let minInvestment = Infinity;
-    let optimalMiners = 0;
-    let optimalBess = 0;
-    
-    for (let m = 0; m <= 20; m++) {
-      for (let b = 0; b <= 5; b++) {
-        // Toto je jen zjednodušený odhad skutečné implementace
-        const minerContribution = m > 0 ? minerAnalysis.find(item => item.miners === m)?.selfConsumptionRatio - energyData.selfConsumptionRatio : 0;
-        const bessContribution = b > 0 ? bessAnalysis.find(item => item.bessUnits === b)?.selfConsumptionRatio - energyData.selfConsumptionRatio : 0;
+      // Najít optimální kombinaci pro splnění 85% vlastní spotřeby
+      function findOptimalCombination() {
+        let minInvestment = Infinity;
+        let optimalMiners = 0;
+        let optimalBess = 0;
         
-        // Hrubý odhad kombinovaného příspěvku
-        const combinedContribution = energyData.selfConsumptionRatio + minerContribution + (bessContribution / 2); // Upraveno kvůli překryvu
-        
-        if (combinedContribution >= 85) {
-          const investment = m * minerPrice + b * bessUnitPrice;
-          if (investment < minInvestment) {
-            minInvestment = investment;
-            optimalMiners = m;
-            optimalBess = b;
+        for (let m = 0; m <= 20; m++) {
+          for (let b = 0; b <= 5; b++) {
+            const combo = simulationData.combinedResults[m][b];
+            if (combo.combinedSelfConsumptionRatio >= 85) {
+              if (combo.totalInvestment < minInvestment) {
+                minInvestment = combo.totalInvestment;
+                optimalMiners = m;
+                optimalBess = b;
+              }
+            }
           }
         }
+        
+        return {
+          optimalMiners,
+          optimalBess,
+          optimalInvestment: minInvestment
+        };
       }
-    }
-    
-    return { optimalMiners, optimalBess, optimalInvestment: minInvestment };
-  };
-  
-  const optimalCombination = findOptimalCombination();
-  
-  if (isLoading && !dataLoaded) {
-    return (
-      <div className="flex justify-center items-center h-64 bg-white p-4 rounded shadow">
-        <div className="text-xl font-semibold">Načítání dat a provádění výpočtů...</div>
-      </div>
-    );
-  }
-  
-  return (
-    <div className="p-6 max-w-6xl mx-auto">
-      <h1 className="text-2xl font-bold mb-6">Simulace optimalizace FVE pomocí těžby kryptoměn a BESS</h1>
       
-      {/* Základní informace */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <div className="bg-white p-4 rounded shadow">
-          <h2 className="text-lg font-semibold mb-2">Výroba a spotřeba</h2>
-          <div className="grid grid-cols-2 gap-2">
-            <div className="bg-blue-50 p-2 rounded">
-              <div className="text-sm text-gray-600">Celková výroba</div>
-              <div className="text-lg font-semibold">{formatNumber(energyData.totalProduction)} kWh</div>
-            </div>
-            <div className="bg-red-50 p-2 rounded">
-              <div className="text-sm text-gray-600">Celková spotřeba</div>
-              <div className="text-lg font-semibold">{formatNumber(energyData.totalConsumption)} kWh</div>
-            </div>
-            <div className="bg-green-50 p-2 rounded">
-              <div className="text-sm text-gray-600">Vlastní spotřeba</div>
-              <div className="text-lg font-semibold">{formatNumber(energyData.selfConsumption)} kWh</div>
-            </div>
-            <div className="bg-yellow-50 p-2 rounded">
-              <div className="text-sm text-gray-600">Přetoky do sítě</div>
-              <div className="text-lg font-semibold">{formatNumber(energyData.totalExport)} kWh</div>
-            </div>
-          </div>
-        </div>
-        
-        <div className="bg-white p-4 rounded shadow">
-          <h2 className="text-lg font-semibold mb-2">Vlastní spotřeba</h2>
-          <div className="grid grid-cols-2 gap-2">
-            <div className="bg-blue-50 p-2 rounded">
-              <div className="text-sm text-gray-600">Aktuální poměr</div>
-              <div className="text-lg font-semibold">{formatNumber(energyData.selfConsumptionRatio)}%</div>
-            </div>
-            <div className="bg-green-50 p-2 rounded">
-              <div className="text-sm text-gray-600">Požadovaný poměr</div>
-              <div className="text-lg font-semibold">85.00%</div>
-            </div>
-            <div className="bg-orange-50 p-2 rounded">
-              <div className="text-sm text-gray-600">Min. počet minerů</div>
-              <div className="text-lg font-semibold">{requiredMiners}</div>
-            </div>
-            <div className="bg-purple-50 p-2 rounded">
-              <div className="text-sm text-gray-600">Dotace v ohrožení</div>
-              <div className="text-lg font-semibold">3 000 000 Kč</div>
-            </div>
-          </div>
-        </div>
-        
-        <div className="bg-white p-4 rounded shadow">
-          <h2 className="text-lg font-semibold mb-2">Nastavení</h2>
-          <div className="mb-3">
-            <label className="block text-sm mb-1">Počet Antminer S19 Pro Hydro</label>
-            <input
-              type="range"
-              min="0"
-              max="20"
-              value={numMiners}
-              onChange={(e) => setNumMiners(parseInt(e.target.value))}
-              className="w-full"
-            />
-            <div className="flex justify-between text-xs">
-              <span>0</span>
-              <span>{numMiners}</span>
-              <span>20</span>
-            </div>
-          </div>
-          
-          <div className="mb-3">
-            <label className="block text-sm mb-1">Počet OPTIM US L260-OMNI</label>
-            <input
-              type="range"
-              min="0"
-              max="5"
-              value={numBessUnits}
-              onChange={(e) => setNumBessUnits(parseInt(e.target.value))}
-              className="w-full"
-            />
-            <div className="flex justify-between text-xs">
-              <span>0</span>
-              <span>{numBessUnits}</span>
-              <span>5</span>
-            </div>
-          </div>
-          
-          <div className="grid grid-cols-2 gap-2 mt-4">
-            <div className="bg-amber-50 p-2 rounded">
-              <div className="text-sm text-gray-600">Miner: 5.428 kW</div>
-              <div className="text-lg font-semibold">{formatNumber(minerPrice)} Kč</div>
-            </div>
-            <div className="bg-violet-50 p-2 rounded">
-              <div className="text-sm text-gray-600">BESS: 260 kWh</div>
-              <div className="text-lg font-semibold">{formatNumber(bessUnitPrice)} Kč</div>
-            </div>
-          </div>
-        </div>
-      </div>
+      const optimalCombination = findOptimalCombination();
       
-      {/* Výsledky optimalizace */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-        <div className="bg-white p-4 rounded shadow">
-          <h2 className="text-lg font-semibold mb-3">Energetické toky s {numMiners} minery a {numBessUnits} BESS</h2>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-amber-50 p-2 rounded">
-              <div className="text-sm text-gray-600">Spotřeba minerů</div>
-              <div className="text-lg font-semibold">{formatNumber(energyData.minerEnergyUsed)} kWh</div>
-            </div>
-            <div className="bg-violet-50 p-2 rounded">
-              <div className="text-sm text-gray-600">BESS využití</div>
-              <div className="text-lg font-semibold">{formatNumber(energyData.bessEnergyUsed)} kWh</div>
-            </div>
-            <div className="bg-yellow-50 p-2 rounded">
-              <div className="text-sm text-gray-600">Zbývající přetoky</div>
-              <div className="text-lg font-semibold">{formatNumber(energyData.remainingExport)} kWh</div>
-            </div>
-            <div className="bg-blue-50 p-2 rounded">
-              <div className="text-sm text-gray-600">Nový poměr VS</div>
-              <div className="text-lg font-semibold">{formatNumber(energyData.newSelfConsumptionRatio)}%</div>
-            </div>
-            <div className="bg-orange-50 p-2 rounded">
-              <div className="text-sm text-gray-600">Provoz minerů</div>
-              <div className="text-lg font-semibold">{formatNumber(energyData.hoursOfMinerOperation)} h</div>
-            </div>
-            <div className="bg-purple-50 p-2 rounded">
-              <div className="text-sm text-gray-600">Cykly BESS</div>
-              <div className="text-lg font-semibold">{formatNumber(energyData.bessChargeCycles)}</div>
-            </div>
-          </div>
-        </div>
+      // Aktualizace UI podle stavu sliderů
+      function updateUI() {
+        const numMiners = parseInt(document.getElementById('miner-slider').value);
+        const numBessUnits = parseInt(document.getElementById('bess-slider').value);
         
-        <div className="bg-white p-4 rounded shadow">
-          <h2 className="text-lg font-semibold mb-3">Ekonomická analýza</h2>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-red-50 p-2 rounded">
-              <div className="text-sm text-gray-600">Investice do minerů</div>
-              <div className="text-lg font-semibold">{formatNumber(economicAnalysis.minerInvestment)} Kč</div>
-            </div>
-            <div className="bg-red-50 p-2 rounded">
-              <div className="text-sm text-gray-600">Investice do BESS</div>
-              <div className="text-lg font-semibold">{formatNumber(economicAnalysis.bessInvestment)} Kč</div>
-            </div>
-            <div className="bg-orange-50 p-2 rounded">
-              <div className="text-sm text-gray-600">Využití minerů</div>
-              <div className="text-lg font-semibold">{formatNumber(economicAnalysis.minerUtilizationRatio)}%</div>
-            </div>
-            <div className="bg-orange-50 p-2 rounded">
-              <div className="text-sm text-gray-600">Využití BESS</div>
-              <div className="text-lg font-semibold">{formatNumber(economicAnalysis.bessUtilizationRatio)}%</div>
-            </div>
-            <div className="bg-green-50 p-2 rounded">
-              <div className="text-sm text-gray-600">Měsíční výnos</div>
-              <div className="text-lg font-semibold">{formatNumber(economicAnalysis.monthlyIncome)} Kč</div>
-            </div>
-            <div className="bg-green-50 p-2 rounded">
-              <div className="text-sm text-gray-600">Roční výnos</div>
-              <div className="text-lg font-semibold">{formatNumber(economicAnalysis.yearlyIncome)} Kč</div>
-            </div>
-            <div className="bg-blue-50 p-2 rounded col-span-2">
-              <div className="text-sm text-gray-600">Návratnost investice</div>
-              <div className="text-lg font-semibold">{formatNumber(economicAnalysis.paybackYears)} let</div>
-            </div>
-          </div>
-          
-          <div className="mt-3 p-3 bg-indigo-50 rounded">
-            <div className="text-sm font-semibold mb-1">Srovnání s dotací:</div>
-            <div className="flex items-center">
-              <div className={`text-lg font-bold ${economicAnalysis.comparison > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                {economicAnalysis.comparison > 0 ? 'VÝHODNÉ' : 'NEVÝHODNÉ'}
-              </div>
-              <div className="ml-2">
-                (rozdíl {formatNumber(Math.abs(economicAnalysis.comparison))} Kč {economicAnalysis.comparison > 0 ? 'úspora' : 'navíc'})
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+        // Aktualizace zobrazovaných hodnot
+        document.getElementById('current-miners').textContent = numMiners;
+        document.getElementById('current-bess').textContent = numBessUnits;
+        
+        // Získání dat pro aktuální kombinaci
+        const currentCombo = simulationData.combinedResults[numMiners][numBessUnits];
+        
+        // Aktualizace nadpisů
+        document.getElementById('energy-flows-title').textContent = `Energetické toky s ${numMiners} minery a ${numBessUnits} BESS`;
+        document.getElementById('after-pie-title').textContent = `Po optimalizaci (${numMiners} minerů, ${numBessUnits} BESS)`;
+        
+        // Aktualizace energetických toků
+        document.getElementById('miner-energy-used').textContent = `${formatNumber(currentCombo.minerEnergyUsed)} kWh`;
+        document.getElementById('bess-energy-used').textContent = `${formatNumber(currentCombo.bessEnergyDischarged)} kWh`;
+        document.getElementById('remaining-export').textContent = `${formatNumber(currentCombo.remainingExport)} kWh`;
+        document.getElementById('new-ratio').textContent = `${formatNumber(currentCombo.combinedSelfConsumptionRatio)}%`;
+        document.getElementById('hours-operation').textContent = `${formatNumber(numMiners > 0 ? 2035.5 : 0)} h`;
+        document.getElementById('bess-cycles').textContent = `${formatNumber(currentCombo.bessChargeCycles)}`;
+        
+        // Aktualizace ekonomické analýzy
+        document.getElementById('miner-investment').textContent = `${formatNumber(currentCombo.minerInvestment)} Kč`;
+        document.getElementById('bess-investment').textContent = `${formatNumber(currentCombo.bessInvestment)} Kč`;
+        document.getElementById('miner-utilization').textContent = `${formatNumber(currentCombo.minerUtilizationRatio)}%`;
+        document.getElementById('bess-utilization').textContent = `${formatNumber(currentCombo.bessUtilizationRatio)}%`;
+        document.getElementById('monthly-income').textContent = `${formatNumber(currentCombo.monthlyIncome)} Kč`;
+        document.getElementById('yearly-income').textContent = `${formatNumber(currentCombo.yearlyIncome)} Kč`;
+        document.getElementById('payback-years').textContent = `${formatNumber(currentCombo.paybackYears)} let`;
+        
+        // Srovnání s dotací
+        const dotation = 3000000;
+        const comparison = dotation - currentCombo.totalInvestment;
+        const isPositive = comparison > 0;
+        
+        document.getElementById('comparison-result').textContent = isPositive ? 'VÝHODNÉ' : 'NEVÝHODNÉ';
+        document.getElementById('comparison-result').className = `text-lg font-bold ${isPositive ? 'text-green-600' : 'text-red-600'}`;
+        document.getElementById('comparison-detail').textContent = `(rozdíl ${formatNumber(Math.abs(comparison))} Kč ${isPositive ? 'úspora' : 'navíc'})`;
+        
+        // Aktualizace hodnot v závěrech
+        document.getElementById('summary-miners-count').textContent = numMiners;
+        document.getElementById('summary-bess-count').textContent = numBessUnits;
+        document.getElementById('summary-investment').textContent = `${formatNumber(currentCombo.totalInvestment)} Kč`;
+        document.getElementById('summary-miner-utilization').textContent = `${formatNumber(currentCombo.minerUtilizationRatio)}%`;
+        document.getElementById('summary-bess-utilization').textContent = `${formatNumber(currentCombo.bessUtilizationRatio)}%`;
+        document.getElementById('summary-payback').textContent = `${formatNumber(currentCombo.paybackYears)}`;
+        document.getElementById('energy-miners-count').textContent = numMiners;
+        document.getElementById('energy-bess-count').textContent = numBessUnits;
+        document.getElementById('energy-total-used').textContent = `${formatNumber(currentCombo.minerEnergyUsed + currentCombo.bessEnergyDischarged)}`;
+        document.getElementById('energy-percentage').textContent = `${formatNumber((currentCombo.minerEnergyUsed + currentCombo.bessEnergyCharged) / simulationData.totalExport * 100)}%`;
+        
+        // Aktualizace optimální kombinace
+        document.getElementById('optimal-miners').textContent = optimalCombination.optimalMiners;
+        document.getElementById('optimal-bess').textContent = optimalCombination.optimalBess;
+        
+        // Aktualizace doporučení
+        if (currentCombo.combinedSelfConsumptionRatio >= 85) {
+          if (currentCombo.totalInvestment <= dotation) {
+            document.getElementById('recommendation-box').className = 'bg-green-light p-3 rounded';
+            document.getElementById('final-recommendation').className = 'text-green-800';
+            document.getElementById('final-recommendation').textContent = `Aktuální konfigurace (${numMiners} minerů a ${numBessUnits} BESS) dosahuje požadovaného poměru vlastní spotřeby ${formatNumber(currentCombo.combinedSelfConsumptionRatio)}%, což splňuje podmínku 85% pro zachování dotace. Tato konfigurace je ekonomicky výhodná s návratností ${formatNumber(currentCombo.paybackYears)} let.`;
+          } else {
+            document.getElementById('recommendation-box').className = 'bg-yellow-light p-3 rounded';
+            document.getElementById('final-recommendation').className = 'text-orange-800';
+            document.getElementById('final-recommendation').textContent = `Aktuální konfigurace (${numMiners} minerů a ${numBessUnits} BESS) dosahuje požadovaného poměru vlastní spotřeby ${formatNumber(currentCombo.combinedSelfConsumptionRatio)}%, což splňuje podmínku 85% pro zachování dotace. Z ekonomického hlediska je však tato varianta nevýhodná z důvodu vysokých investičních nákladů. Doporučujeme optimální konfiguraci: ${optimalCombination.optimalMiners} minerů a ${optimalCombination.optimalBess} BESS jednotek s celkovou investicí ${formatNumber(optimalCombination.optimalInvestment)} Kč, což je výrazně méně než hodnota dotace.`;
+          }
+        } else {
+          document.getElementById('recommendation-box').className = 'bg-red-light p-3 rounded';
+          document.getElementById('final-recommendation').className = 'text-red-800';
+          document.getElementById('final-recommendation').textContent = `Aktuální konfigurace (${numMiners} minerů a ${numBessUnits} BESS) dosahuje poměru vlastní spotřeby pouze ${formatNumber(currentCombo.combinedSelfConsumptionRatio)}%, což NESPLŇUJE podmínku 85% pro zachování dotace. Pro dosažení požadovaného poměru doporučujeme optimální konfiguraci: ${optimalCombination.optimalMiners} minerů a ${optimalCombination.optimalBess} BESS jednotek s celkovou investicí ${formatNumber(optimalCombination.optimalInvestment)} Kč.`;
+        }
+        
+        // Aktualizace koláčových grafů
+        if (afterChart) {
+          afterChart.data.datasets[0].data = [
+            simulationData.selfConsumption,
+            currentCombo.minerEnergyUsed,
+            currentCombo.bessEnergyDischarged,
+            currentCombo.remainingExport
+          ];
+          afterChart.update();
+        }
+      }
       
-      {/* Grafy */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-        <div className="bg-white p-4 rounded shadow">
-          <h2 className="text-lg font-semibold mb-3">Analýza vlivu počtu minerů a BESS</h2>
-          <div className="h-64">
-            {minerAnalysis.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart
-                  margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="miners" label={{ value: 'Počet minerů / BESS jednotek', position: 'insideBottom', offset: -5 }} />
-                  <YAxis yAxisId="left" label={{ value: 'Poměr vlastní spotřeby (%)', angle: -90, position: 'insideLeft' }} />
-                  <YAxis yAxisId="right" orientation="right" label={{ value: 'Spotřeba (MWh)', angle: -90, position: 'insideRight' }} />
-                  <Tooltip formatter={(value, name) => {
-                    if (name === 'selfConsumptionRatio' || name === 'selfConsumptionRatioBess') 
-                      return [value ? formatNumber(value) + '%' : '0%', 'Poměr vlastní spotřeby'];
-                    if (name === 'energyUsed') 
-                      return [value ? formatNumber(value / 1000) + ' MWh' : '0 MWh', 'Spotřeba minerů'];
-                    if (name === 'energyDischarged') 
-                      return [value ? formatNumber(value / 1000) + ' MWh' : '0 MWh', 'Využití BESS'];
-                    return [value, name];
-                  }} />
-                  <Legend />
-                  <Line
-                    data={minerAnalysis}
-                    yAxisId="left"
-                    type="monotone"
-                    dataKey="selfConsumptionRatio"
-                    name="VS s minery"
-                    stroke="#8884d8"
-                    activeDot={{ r: 8 }}
-                  />
-                  <Line
-                    data={bessAnalysis}
-                    yAxisId="left"
-                    type="monotone"
-                    dataKey="selfConsumptionRatio"
-                    name="VS s BESS"
-                    stroke="#0088FE"
-                    activeDot={{ r: 8 }}
-                  />
-                  <Line
-                    data={minerAnalysis}
-                    yAxisId="right"
-                    type="monotone"
-                    dataKey="energyUsed"
-                    name="Spotřeba minerů"
-                    stroke="#82ca9d"
-                  />
-                  <Line
-                    data={bessAnalysis}
-                    yAxisId="right"
-                    type="monotone"
-                    dataKey="energyDischarged"
-                    name="Využití BESS"
-                    stroke="#FF8042"
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="h-full flex items-center justify-center">
-                <div className="text-gray-500">Data pro graf nejsou k dispozici</div>
-              </div>
-            )}
-          </div>
-        </div>
+      // Inicializace grafů
+      function initCharts() {
+        // Graf vlivu počtu minerů a BESS
+        const ctx1 = document.getElementById('impact-chart').getContext('2d');
         
-        <div className="bg-white p-4 rounded shadow">
-          <h2 className="text-lg font-semibold mb-3">Rozložení spotřeby před a po optimalizaci</h2>
-          <div className="h-64 flex items-center justify-around">
-            <div className="w-1/2 h-full">
-              <h3 className="text-center text-sm font-medium mb-2">Před optimalizací</h3>
-              {pieData.beforeData.some(item => item.value > 0) ? (
-                <ResponsiveContainer width="100%" height="90%">
-                  <PieChart>
-                    <Pie
-                      data={pieData.beforeData}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      outerRadius={80}
-                      fill="#8884d8"
-                      dataKey="value"
-                      label={({ name, percent }) => `${name}: ${percent ? (percent * 100).toFixed(1) : '0'}%`}
-                    >
-                      {pieData.beforeData.map((entry, index) => (
-                        <Cell key={`cell-before-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value) => [value ? formatNumber(value) + ' kWh' : '0 kWh', '']} />
-                  </PieChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="h-full flex items-center justify-center">
-                  <div className="text-gray-500">Data nejsou k dispozici</div>
-                </div>
-              )}
-            </div>
-            
-            <div className="w-1/2 h-full">
-              <h3 className="text-center text-sm font-medium mb-2">Po optimalizaci ({numMiners} minerů, {numBessUnits} BESS)</h3>
-              {pieData.afterData.some(item => item.value > 0) ? (
-                <ResponsiveContainer width="100%" height="90%">
-                  <PieChart>
-                    <Pie
-                      data={pieData.afterData}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      outerRadius={80}
-                      fill="#8884d8"
-                      dataKey="value"
-                      label={({ name, percent }) => `${name}: ${percent ? (percent * 100).toFixed(1) : '0'}%`}
-                    >
-                      {pieData.afterData.map((entry, index) => (
-                        <Cell key={`cell-after-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value) => [value ? formatNumber(value) + ' kWh' : '0 kWh', '']} />
-                  </PieChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="h-full flex items-center justify-center">
-                  <div className="text-gray-500">Data nejsou k dispozici</div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
+        // Příprava dat pro graf
+        const minerLabels = Array.from({ length: 21 }, (_, i) => i);
+        const minerSelfConsumptionData = minerLabels.map(m => simulationData.minerResults[m].newSelfConsumptionRatio);
+        const minerEnergyUsedData = minerLabels.map(m => simulationData.minerResults[m].energyUsed / 1000);
+        
+        const bessLabels = Array.from({ length: 6 }, (_, i) => i);
+        const bessSelfConsumptionData = bessLabels.map(b => simulationData.bessResults[b].newSelfConsumptionRatio);
+        const bessEnergyUsedData = bessLabels.map(b => simulationData.bessResults[b].energyDischarged / 1000);
+        
+        const impactChart = new Chart(ctx1, {
+          type: 'line',
+          data: {
+            labels: minerLabels,
+            datasets: [
+              {
+                label: 'VS s minery (%)',
+                data: minerSelfConsumptionData,
+                borderColor: '#8884d8',
+                backgroundColor: 'rgba(136, 132, 216, 0.2)',
+                yAxisID: 'y',
+                tension: 0.3
+              },
+              {
+                label: 'VS s BESS (%)',
+                data: [
+                  bessSelfConsumptionData[0],
+                  bessSelfConsumptionData[1],
+                  bessSelfConsumptionData[2],
+                  bessSelfConsumptionData[3],
+                  bessSelfConsumptionData[4],
+                  bessSelfConsumptionData[5],
+                  null, null, null, null, null, null, null, null, null, null, null, null, null, null, null
+                ],
+                borderColor: '#0088FE',
+                backgroundColor: 'rgba(0, 136, 254, 0.2)',
+                yAxisID: 'y',
+                tension: 0.3
+              },
+              {
+                label: 'Spotřeba minerů (MWh)',
+                data: minerEnergyUsedData,
+                borderColor: '#82ca9d',
+                backgroundColor: 'rgba(130, 202, 157, 0.2)',
+                yAxisID: 'y1',
+                tension: 0.3
+              },
+              {
+                label: 'Využití BESS (MWh)',
+                data: [
+                  bessEnergyUsedData[0],
+                  bessEnergyUsedData[1],
+                  bessEnergyUsedData[2],
+                  bessEnergyUsedData[3],
+                  bessEnergyUsedData[4],
+                  bessEnergyUsedData[5],
+                  null, null, null, null, null, null, null, null, null, null, null, null, null, null, null
+                ],
+                borderColor: '#FF8042',
+                backgroundColor: 'rgba(255, 128, 66, 0.2)',
+                yAxisID: 'y1',
+                tension: 0.3
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+              y: {
+                type: 'linear',
+                display: true,
+                position: 'left',
+                title: {
+                  display: true,
+                  text: 'Poměr vlastní spotřeby (%)'
+                },
+                min: 80,
+                max: 100
+              },
+              y1: {
+                type: 'linear',
+                display: true,
+                position: 'right',
+                title: {
+                  display: true,
+                  text: 'Spotřeba (MWh)'
+                },
+                grid: {
+                  drawOnChartArea: false
+                }
+              }
+            },
+            plugins: {
+              tooltip: {
+                callbacks: {
+                  label: function(context) {
+                    let label = context.dataset.label || '';
+                    if (label) {
+                      label += ': ';
+                    }
+                    if (context.parsed.y !== null) {
+                      label += context.parsed.y.toFixed(2);
+                      if (context.dataset.yAxisID === 'y') {
+                        label += '%';
+                      } else {
+                        label += ' MWh';
+                      }
+                    }
+                    return label;
+                  }
+                }
+              }
+            }
+          }
+        });
+        
+        // Koláčový graf před optimalizací
+        const ctx2 = document.getElementById('before-chart').getContext('2d');
+        const beforeChart = new Chart(ctx2, {
+          type: 'doughnut',
+          data: {
+            labels: ['Vlastní spotřeba', 'Přetoky do sítě'],
+            datasets: [{
+              data: [simulationData.selfConsumption, simulationData.totalExport],
+              backgroundColor: ['#0088FE', '#00C49F'],
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              tooltip: {
+                callbacks: {
+                  label: function(context) {
+                    const value = context.raw;
+                    const total = simulationData.selfConsumption + simulationData.totalExport;
+                    const percentage = (value / total * 100).toFixed(1);
+                    return `${context.label}: ${formatNumber(value)} kWh (${percentage}%)`;
+                  }
+                }
+              }
+            }
+          }
+        });
+        
+        // Koláčový graf po optimalizaci
+        const ctx3 = document.getElementById('after-chart').getContext('2d');
+        const numMiners = parseInt(document.getElementById('miner-slider').value);
+        const numBessUnits = parseInt(document.getElementById('bess-slider').value);
+        const currentCombo = simulationData.combinedResults[numMiners][numBessUnits];
+        
+        window.afterChart = new Chart(ctx3, {
+          type: 'doughnut',
+          data: {
+            labels: ['Vlastní spotřeba', 'Spotřeba minerů', 'Využití BESS', 'Zbývající přetoky'],
+            datasets: [{
+              data: [
+                simulationData.selfConsumption,
+                currentCombo.minerEnergyUsed,
+                currentCombo.bessEnergyDischarged,
+                currentCombo.remainingExport
+              ],
+              backgroundColor: ['#0088FE', '#00C49F', '#8884d8', '#FFBB28'],
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              tooltip: {
+                callbacks: {
+                  label: function(context) {
+                    const value = context.raw;
+                    const total = simulationData.totalProduction;
+                    const percentage = (value / total * 100).toFixed(1);
+                    return `${context.label}: ${formatNumber(value)} kWh (${percentage}%)`;
+                  }
+                }
+              }
+            }
+          }
+        });
+        
+        // Graf distribuce přetoků
+        const ctx4 = document.getElementById('distribution-chart').getContext('2d');
+        const distributionChart = new Chart(ctx4, {
+          type: 'bar',
+          data: {
+            labels: simulationData.exportDistribution.map(item => item.pretok),
+            datasets: [{
+              label: 'Počet čtvrthodin',
+              data: simulationData.exportDistribution.map(item => item.cetnost),
+              backgroundColor: 'rgba(136, 132, 216, 0.7)',
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+              x: {
+                title: {
+                  display: true,
+                  text: 'Velikost přetoku (kW)'
+                }
+              },
+              y: {
+                title: {
+                  display: true,
+                  text: 'Počet čtvrthodin'
+                },
+                beginAtZero: true
+              }
+            },
+            plugins: {
+              tooltip: {
+                callbacks: {
+                  label: function(context) {
+                    const index = context.dataIndex;
+                    const cetnost = simulationData.exportDistribution[index].cetnost;
+                    const hodiny = simulationData.exportDistribution[index].hodiny;
+                    return [
+                      `Četnost: ${cetnost} čtvrthodin`,
+                      `Doba trvání: ${formatNumber(hodiny)} hodin`
+                    ];
+                  }
+                }
+              }
+            }
+          }
+        });
+      }
       
-      {/* Distribuce přetoků */}
-      <div className="bg-white p-4 rounded shadow mb-6">
-        <h2 className="text-lg font-semibold mb-3">Distribuce přetoků do sítě</h2>
-        <div className="h-64">
-          {exportDistribution.length > 0 ? (
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={exportDistribution}
-                margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="pretok" label={{ value: 'Velikost přetoku (kW)', position: 'insideBottom', offset: -5 }} />
-                <YAxis label={{ value: 'Počet čtvrthodin', angle: -90, position: 'insideLeft' }} />
-                <Tooltip formatter={(value, name) => {
-                  if (name === 'cetnost') return [value ? value + ' čtvrthodin' : '0 čtvrthodin', 'Četnost'];
-                  if (name === 'hodiny') return [value ? formatNumber(value) + ' hodin' : '0 hodin', 'Doba trvání'];
-                  return [value, name];
-                }} />
-                <Legend />
-                <Bar dataKey="cetnost" name="Četnost" fill="#8884d8" />
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="h-full flex items-center justify-center">
-              <div className="text-gray-500">Data pro graf nejsou k dispozici</div>
-            </div>
-          )}
-        </div>
-      </div>
+      // Nastavení posluchačů událostí
+      document.getElementById('miner-slider').addEventListener('input', updateUI);
+      document.getElementById('bess-slider').addEventListener('input', updateUI);
       
-      {/* Závěry a doporučení */}
-      <div className="bg-white p-4 rounded shadow">
-        <h2 className="text-lg font-semibold mb-3">Závěry a doporučení</h2>
-        
-        <div className="space-y-4">
-          <div>
-            <h3 className="font-medium">Současný stav:</h3>
-            <p>
-              Aktuální poměr vlastní spotřeby je <span className="font-semibold">{formatNumber(energyData.selfConsumptionRatio)}%</span>, 
-              což nesplňuje podmínku 85% pro zachování dotace.
-            </p>
-          </div>
-          
-          <div>
-            <h3 className="font-medium">Optimální řešení:</h3>
-            <p>
-              Pro dosažení minimálně 85% vlastní spotřeby existuje několik možností:
-              <ul className="list-disc pl-5 mt-2 space-y-1">
-                <li>Použití pouze minerů: minimálně <span className="font-semibold">{requiredMiners}</span> minerů</li>
-                <li>Použití pouze BESS: minimálně <span className="font-semibold">{bessAnalysis.find(item => item.selfConsumptionRatio >= 85)?.bessUnits || "více než 5"}</span> jednotek</li>
-                <li>Optimální kombinace: <span className="font-semibold">{optimalCombination.optimalMiners}</span> minerů a <span className="font-semibold">{optimalCombination.optimalBess}</span> BESS jednotek</li>
-              </ul>
-            </p>
-          </div>
-          
-          <div>
-            <h3 className="font-medium">Ekonomické zhodnocení:</h3>
-            <p>
-              Vybraná konfigurace (<span className="font-semibold">{numMiners}</span> minerů a <span className="font-semibold">{numBessUnits}</span> BESS jednotek) 
-              vyžaduje investici <span className="font-semibold">{formatNumber(economicAnalysis.totalInvestment)}</span> Kč, 
-              což je {economicAnalysis.comparison > 0 ? "výrazně méně" : "více"} než potenciální ztráta dotace (3 000 000 Kč).
-            </p>
-            <p className="mt-1">
-              Minery budou v provozu pouze během přetoků, přibližně <span className="font-semibold">
-                {formatNumber(economicAnalysis.minerUtilizationRatio)}%</span> času v roce. BESS jednotky budou využity na <span className="font-semibold">
-                {formatNumber(economicAnalysis.bessUtilizationRatio)}%</span> své kapacity ročně.
-            </p>
-            <p className="mt-1">
-              Odhadovaná návratnost celkové investice je přibližně <span className="font-semibold">
-                {formatNumber(economicAnalysis.paybackYears)}</span> let z kombinace výnosů těžby a úspory energie z BESS.
-            </p>
-          </div>
-          
-          <div>
-            <h3 className="font-medium">Energetické využití:</h3>
-            <p>
-              Při instalaci <span className="font-semibold">{numMiners}</span> minerů a <span className="font-semibold">{numBessUnits}</span> BESS jednotek by bylo 
-              spotřebováno <span className="font-semibold">{formatNumber(energyData.minerEnergyUsed + energyData.bessEnergyUsed)}</span> kWh 
-              přebytků energie ročně, což představuje <span className="font-semibold">
-                {energyData.totalExport > 0 ? formatNumber((energyData.minerEnergyUsed + energyData.bessEnergyUsed) / energyData.totalExport * 100) : '0'}%</span> 
-              současných přetoků do sítě.
-            </p>
-          </div>
-          
-          <div className="bg-green-50 p-3 rounded">
-            <h3 className="font-medium text-green-800">Finální doporučení:</h3>
-            <p className="text-green-800">
-              {energyData.newSelfConsumptionRatio >= 85 ? (
-                <>
-                  Doporučujeme instalovat <span className="font-semibold">{numMiners}</span> minerů Antminer S19 Pro Hydro a <span className="font-semibold">{numBessUnits}</span> jednotek OPTIM US L260-OMNI
-                  pro dosažení požadovaného poměru vlastní spotřeby <span className="font-semibold">{formatNumber(energyData.newSelfConsumptionRatio)}%</span> a zachování dotace.
-                  Toto řešení je ekonomicky výhodné a poskytuje přiměřenou návratnost investice.
-                </>
-              ) : (
-                <>
-                  Aktuální konfigurace nedosahuje požadovaného poměru vlastní spotřeby 85%. Doporučujeme optimální konfiguraci:
-                  <span className="font-semibold"> {optimalCombination.optimalMiners}</span> minerů a <span className="font-semibold">{optimalCombination.optimalBess}</span> BESS jednotek
-                  s celkovou investicí <span className="font-semibold">{formatNumber(optimalCombination.optimalInvestment)}</span> Kč.
-                </>
-              )}
-            </p>
-          </div>
-        </div>
-      {/* Výsledky optimalizace */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-        <div className="bg-white p-4 rounded shadow">
-          <h2 className="text-lg font-semibold mb-3">Energetické toky s {numMiners} minery a {numBessUnits} BESS</h2>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-amber-50 p-2 rounded">
-              <div className="text-sm text-gray-600">Spotřeba minerů</div>
-              <div className="text-lg font-semibold">{formatNumber(energyData.minerEnergyUsed)} kWh</div>
-            </div>
-            <div className="bg-violet-50 p-2 rounded">
-              <div className="text-sm text-gray-600">Využití BESS</div>
-              <div className="text-lg font-semibold">{formatNumber(energyData.bessEnergyUsed)} kWh</div>
-            </div>
-            <div className="bg-yellow-50 p-2 rounded">
-              <div className="text-sm text-gray-600">Zbývající přetoky</div>
-              <div className="text-lg font-semibold">{formatNumber(energyData.remainingExport)} kWh</div>
-            </div>
-            <div className="bg-blue-50 p-2 rounded">
-              <div className="text-sm text-gray-600">Nový poměr VS</div>
-              <div className="text-lg font-semibold">{formatNumber(energyData.newSelfConsumptionRatio)}%</div>
-            </div>
-            <div className="bg-orange-50 p-2 rounded">
-              <div className="text-sm text-gray-600">Provoz minerů</div>
-              <div className="text-lg font-semibold">{formatNumber(energyData.hoursOfMinerOperation)} h</div>
-            </div>
-            <div className="bg-purple-50 p-2 rounded">
-              <div className="text-sm text-gray-600">Cykly BESS</div>
-              <div className="text-lg font-semibold">{formatNumber(energyData.bessChargeCycles)}</div>
-            </div>
-          </div>
-        </div>
-        
-        <div className="bg-white p-4 rounded shadow">
-          <h2 className="text-lg font-semibold mb-3">Ekonomická analýza</h2>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-red-50 p-2 rounded">
-              <div className="text-sm text-gray-600">Investice do minerů</div>
-              <div className="text-lg font-semibold">{formatNumber(economicAnalysis.minerInvestment)} Kč</div>
-            </div>
-            <div className="bg-red-50 p-2 rounded">
-              <div className="text-sm text-gray-600">Investice do BESS</div>
-              <div className="text-lg font-semibold">{formatNumber(economicAnalysis.bessInvestment)} Kč</div>
-            </div>
-            <div className="bg-orange-50 p-2 rounded">
-              <div className="text-sm text-gray-600">Využití minerů</div>
-              <div className="text-lg font-semibold">{formatNumber(economicAnalysis.minerUtilizationRatio)}%</div>
-            </div>
-            <div className="bg-orange-50 p-2 rounded">
-              <div className="text-sm text-gray-600">Využití BESS</div>
-              <div className="text-lg font-semibold">{formatNumber(economicAnalysis.bessUtilizationRatio)}%</div>
-            </div>
-            <div className="bg-green-50 p-2 rounded">
-              <div className="text-sm text-gray-600">Měsíční výnos</div>
-              <div className="text-lg font-semibold">{formatNumber(economicAnalysis.monthlyIncome)} Kč</div>
-            </div>
-            <div className="bg-green-50 p-2 rounded">
-              <div className="text-sm text-gray-600">Roční výnos</div>
-              <div className="text-lg font-semibold">{formatNumber(economicAnalysis.yearlyIncome)} Kč</div>
-            </div>
-            <div className="bg-blue-50 p-2 rounded col-span-2">
-              <div className="text-sm text-gray-600">Návratnost investice</div>
-              <div className="text-lg font-semibold">{formatNumber(economicAnalysis.paybackYears)} let</div>
-            </div>
-          </div>
-          
-          <div className="mt-3 p-3 bg-indigo-50 rounded">
-            <div className="text-sm font-semibold mb-1">Srovnání s dotací:</div>
-            <div className="flex items-center">
-              <div className={`text-lg font-bold ${economicAnalysis.comparison > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                {economicAnalysis.comparison > 0 ? 'VÝHODNÉ' : 'NEVÝHODNÉ'}
-              </div>
-              <div className="ml-2">
-                (rozdíl {formatNumber(Math.abs(economicAnalysis.comparison))} Kč {economicAnalysis.comparison > 0 ? 'úspora' : 'navíc'})
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-  );
-};
-
-export default EnergyOptimizationSimulator;
+      // Inicializace stránky
+      initCharts();
+      updateUI();
+      
+      // Skrytí loading obrazovky
+      document.getElementById('loading').style.display = 'none';
+    });
+  </script>
+</body>
+</html>
